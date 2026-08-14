@@ -231,13 +231,21 @@ export class GeminiAgentService {
       else if (/\b(aidu|five)\b/i.test(chunk)) qty = 5;
       else if (/\b(aaru|six)\b/i.test(chunk)) qty = 6;
 
+      // Strip numbers and units from query to find the cleanest product match
+      const cleanSearchTerm = chunk
+        .replace(/\b(\d+|ondu|onne|one|eradu|two|muru|three|nalku|four|aidu|five|aaru|six)\b/gi, '')
+        .replace(/\b(packet|packets|pkt|box|bottle|can|cans|kg|g|gm|grams|litre|l|beku|kodi|thanni|haaki)\b/gi, '')
+        .trim();
+
+      const queryToUse = cleanSearchTerm.length > 0 ? cleanSearchTerm : chunk;
+
       const searchRes = await ZeptoMcpTools.executeTool(sessionId, 'search_zepto_products', {
-        query: chunk
+        query: queryToUse
       });
 
       toolLogs.push({
         toolName: 'search_zepto_products',
-        args: { query: chunk },
+        args: { query: queryToUse },
         result: searchRes,
         timestamp: new Date().toLocaleTimeString('en-IN')
       });
@@ -268,8 +276,7 @@ export class GeminiAgentService {
     let placedOrderDetails: PlacedOrder | undefined = undefined;
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey.startsWith('AQ.')) {
-      // If no valid Gemini key or invalid key format, gracefully use the robust NLP engine
+    if (!apiKey) {
       return this.fallbackNlpEngine(sessionId, userMessage);
     }
 

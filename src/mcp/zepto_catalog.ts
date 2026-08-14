@@ -2,7 +2,7 @@ export interface Product {
   id: string;
   name: string;
   kannadaName: string;
-  category: 'Dairy & Bread' | 'Vegetables & Fruits' | 'Atta, Rice & Dal' | 'Masala & Spices' | 'Breakfast & Snacks' | 'Household';
+  category: 'Dairy & Bread' | 'Vegetables & Fruits' | 'Atta, Rice & Dal' | 'Masala & Spices' | 'Breakfast & Snacks' | 'Cold Drinks & Juices' | 'Munchies & Chips' | 'Household';
   unit: string;
   price: number;
   mrp: number;
@@ -34,7 +34,7 @@ export interface Cart {
 export interface PlacedOrder {
   orderId: string;
   sessionId: string;
-  status: 'CONFIRMED' | 'PACKING' | 'OUT_FOR_DELIVERY' | 'DELIVERED';
+  status: 'CONFIRMED' | 'PACKING' | 'OUT_FOR_DELIVERY' | 'DELIVERED' | 'CANCELLED';
   cartSnapshot: Cart;
   deliveryEtaMinutes: number;
   deliveryAddress: string;
