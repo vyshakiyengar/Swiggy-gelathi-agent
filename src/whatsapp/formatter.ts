@@ -62,8 +62,12 @@ export class WhatsAppFormatter {
         `• UPI VPA: \`zepto.orders@icici\``;
     }
 
+    const headline = confirmation.isLive
+      ? `🎉 *Order Placed Successfully on Zepto!* ⚡`
+      : `🧪 *[DEMO] Simulated Order - not sent to Zepto* ⚡`;
+
     return (
-      `🎉 *Order Placed Successfully on Zepto!* ⚡\n` +
+      `${headline}\n` +
       `─────────────────────────\n` +
       `🆔 *Order ID:* \`${confirmation.orderId}\`\n` +
       `⏱️ *ETA:* Arriving in *~${confirmation.deliveryEtaMinutes} minutes*\n` +

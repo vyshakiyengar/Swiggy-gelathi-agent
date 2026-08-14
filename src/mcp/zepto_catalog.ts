@@ -2,7 +2,7 @@ export interface Product {
   id: string;
   name: string;
   kannadaName: string;
-  category: 'Dairy & Bread' | 'Vegetables & Fruits' | 'Atta, Rice & Dal' | 'Masala & Spices' | 'Breakfast & Snacks' | 'Cold Drinks & Juices' | 'Munchies & Chips' | 'Household';
+  category: string;
   unit: string;
   price: number;
   mrp: number;
@@ -11,6 +11,8 @@ export interface Product {
   brand: string;
   kannadaAliases: string[];
   imageUrl: string;
+  /** true if this came from a real Zepto live search, false/undefined for the local demo catalog */
+  isLive?: boolean;
 }
 
 export interface CartItem {
@@ -43,8 +45,10 @@ export interface PlacedOrder {
   trackingUrl: string;
   placedAt: string;
   estimatedDeliveryTime: string;
-  riderName: string;
-  riderPhone: string;
+  riderName?: string;
+  riderPhone?: string;
+  /** true if this order was actually placed against the real Zepto account, false if it's a local demo/simulated order */
+  isLive: boolean;
 }
 
 export const ZEPTO_PRODUCT_CATALOG: Product[] = [
@@ -566,6 +570,14 @@ export const ZEPTO_PRODUCT_CATALOG: Product[] = [
 export class ZeptoStoreService {
   private activeCarts: Map<string, Cart> = new Map();
   private placedOrders: Map<string, PlacedOrder> = new Map();
+  private liveProductCache: Map<string, Product> = new Map();
+
+  /** Registers real Zepto products (from a live search) so they can later be looked up by their real product ID */
+  public cacheLiveProducts(products: Product[]): void {
+    for (const product of products) {
+      this.liveProductCache.set(product.id, product);
+    }
+  }
 
   public searchProducts(query: string): Product[] {
     if (!query || typeof query !== 'string') {
@@ -593,7 +605,7 @@ export class ZeptoStoreService {
   }
 
   public getProductById(id: string): Product | undefined {
-    return ZEPTO_PRODUCT_CATALOG.find((p) => p.id === id);
+    return this.liveProductCache.get(id) || ZEPTO_PRODUCT_CATALOG.find((p) => p.id === id);
   }
 
   public getOrCreateCart(sessionId: string): Cart {

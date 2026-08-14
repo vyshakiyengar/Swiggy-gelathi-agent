@@ -360,7 +360,8 @@ export function createZeptoMcpServer(): Server {
               minute: '2-digit'
             }),
             riderName: 'Manjunath K (Zepto Rider)',
-            riderPhone: '+91 98450 12345'
+            riderPhone: '+91 98450 12345',
+            isLive: false
           };
 
           zeptoStoreService.savePlacedOrder(placedOrder);

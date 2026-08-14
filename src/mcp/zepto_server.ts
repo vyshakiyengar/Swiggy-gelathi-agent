@@ -1,6 +1,7 @@
 import { FunctionDeclaration, SchemaType } from '@google/generative-ai';
-import { zeptoStoreService, Cart, PlacedOrder } from './zepto_catalog';
+import { zeptoStoreService, Cart, PlacedOrder, Product } from './zepto_catalog';
 import { upiPaymentService, PaymentLinks } from '../payment/upi';
+import { zeptoLiveApiService } from '../zepto/live_api';
 
 export interface OrderConfirmation {
   orderId: string;
@@ -178,9 +179,48 @@ export class ZeptoMcpTools {
     switch (toolName) {
       case 'search_zepto_products': {
         const query = args.query || '';
-        const results = zeptoStoreService.searchProducts(query);
+
+        // Use the local Kannada/Kanglish alias catalog to resolve the query to a canonical
+        // English search term, then search Zepto's real inventory with that term. This keeps
+        // Kannada understanding while ensuring the product actually ordered is a real one.
+        const localMatches = zeptoStoreService.searchProducts(query);
+        const resolvedQuery = localMatches.length > 0 ? localMatches[0].name : query;
+
+        let results: Product[] = [];
+        let live = false;
+
+        if (zeptoLiveApiService.isConfigured()) {
+          const liveResults = await zeptoLiveApiService.searchLiveProducts(resolvedQuery);
+          if (liveResults.length > 0) {
+            const localMatch = localMatches[0];
+            results = liveResults.map((p) => ({
+              id: p.id,
+              name: p.name,
+              kannadaName: localMatch?.kannadaName || p.name,
+              category: localMatch?.category || 'Zepto',
+              unit: p.unit,
+              price: p.price,
+              mrp: p.mrp,
+              inStock: p.inStock,
+              stockCount: p.inStock ? 1 : 0,
+              brand: localMatch?.brand || '',
+              kannadaAliases: localMatch?.kannadaAliases || [],
+              imageUrl: p.imageUrl || '',
+              isLive: true
+            }));
+            zeptoStoreService.cacheLiveProducts(results);
+            live = true;
+          }
+        }
+
+        if (results.length === 0) {
+          // Fall back to the local demo catalog (no live account configured, or live search failed/empty)
+          results = localMatches;
+        }
+
         return {
           query,
+          live,
           count: results.length,
           products: results.map((p) => ({
             id: p.id,
@@ -190,7 +230,8 @@ export class ZeptoMcpTools {
             unit: p.unit,
             price: p.price,
             mrp: p.mrp,
-            inStock: p.inStock
+            inStock: p.inStock,
+            live: p.isLive === true
           }))
         };
       }
@@ -204,7 +245,12 @@ export class ZeptoMcpTools {
       case 'add_to_cart': {
         const productId = args.productId;
         const qty = Number(args.quantity) || 1;
-        const cart = zeptoStoreService.addToCart(sessionId, productId, qty);
+        let cart: Cart;
+        try {
+          cart = zeptoStoreService.addToCart(sessionId, productId, qty);
+        } catch (err: any) {
+          return { status: 'FAILED', error: err.message };
+        }
         return {
           status: 'SUCCESS',
           message: `Added ${qty} unit(s) of ${productId} to cart`,
@@ -289,6 +335,50 @@ export class ZeptoMcpTools {
 
         const paymentMode = (args.paymentMode as 'UPI_ONLINE' | 'CASH_ON_DELIVERY') || 'UPI_ONLINE';
         const deliveryAddress = args.deliveryAddress || cart.deliveryAddress;
+
+        // Real orders are only supported for Cash on Delivery right now - there is no
+        // implemented live checkout path for online/UPI payment against Zepto's account.
+        if (zeptoLiveApiService.isConfigured() && paymentMode === 'CASH_ON_DELIVERY') {
+          const liveResult = await zeptoLiveApiService.placeLiveCodOrder(
+            cart.items.map((i) => ({ productId: i.product.id, quantity: i.quantity }))
+          );
+
+          if (liveResult.success === false) {
+            return {
+              status: 'FAILED',
+              error: `Could not place the order on your real Zepto account: ${liveResult.error}. Your Zepto session may have expired - ask Vyshak to relink the account.`
+            };
+          }
+
+          const orderId = liveResult.orderId;
+          const confirmation: PlacedOrder = {
+            orderId,
+            sessionId,
+            status: 'CONFIRMED',
+            cartSnapshot: JSON.parse(JSON.stringify(cart)),
+            deliveryEtaMinutes: liveResult.deliveryEtaMinutes || 10,
+            deliveryAddress,
+            paymentMode: 'CASH_ON_DELIVERY',
+            trackingUrl: liveResult.trackingUrl || `https://app.zeptonow.com/order/${orderId}`,
+            placedAt: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            estimatedDeliveryTime: new Date(Date.now() + (liveResult.deliveryEtaMinutes || 10) * 60000).toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit'
+            }),
+            isLive: true
+          };
+
+          zeptoStoreService.savePlacedOrder(confirmation);
+          zeptoStoreService.clearCart(sessionId);
+
+          return {
+            status: 'ORDER_PLACED_SUCCESSFULLY',
+            orderDetails: confirmation
+          };
+        }
+
+        // Demo/simulated path: no live Zepto account configured, or an online/UPI payment was
+        // requested (not wired to a real Zepto checkout). Nothing is sent to Zepto here.
         const orderId = `ZP-${Math.floor(100000 + Math.random() * 900000)}`;
 
         let paymentLinks: PaymentLinks | undefined;
@@ -321,7 +411,8 @@ export class ZeptoMcpTools {
             minute: '2-digit'
           }),
           riderName: 'Manjunath K (Zepto Rider)',
-          riderPhone: '+91 98450 12345'
+          riderPhone: '+91 98450 12345',
+          isLive: false
         };
 
         zeptoStoreService.savePlacedOrder(confirmation);
@@ -331,7 +422,11 @@ export class ZeptoMcpTools {
         return {
           status: 'ORDER_PLACED_SUCCESSFULLY',
           orderDetails: confirmation,
-          paymentLinks
+          paymentLinks,
+          simulated: true,
+          note: paymentMode === 'UPI_ONLINE' && zeptoLiveApiService.isConfigured()
+            ? 'Real Zepto orders currently only work with Cash on Delivery; this UPI order was simulated, not sent to Zepto.'
+            : 'No live Zepto account is linked; this order was simulated, not sent to Zepto.'
         };
       }
 
@@ -344,6 +439,18 @@ export class ZeptoMcpTools {
         if (!order) {
           return { error: `Order ${targetId} not found.` };
         }
+
+        if (order.isLive) {
+          // Live order tracking isn't wired up to Zepto's API yet - don't fabricate rider/ETA info.
+          return {
+            orderId: order.orderId,
+            status: order.status,
+            deliveryAddress: order.deliveryAddress,
+            trackingUrl: order.trackingUrl,
+            note: 'This is a real Zepto order, but live tracking isn\'t connected yet - please check the Zepto app directly for rider and ETA status.'
+          };
+        }
+
         return {
           orderId: order.orderId,
           status: order.status,
@@ -351,7 +458,8 @@ export class ZeptoMcpTools {
           estimatedDeliveryTime: order.estimatedDeliveryTime,
           rider: { name: order.riderName, phone: order.riderPhone },
           deliveryAddress: order.deliveryAddress,
-          trackingUrl: order.trackingUrl
+          trackingUrl: order.trackingUrl,
+          note: 'This is a simulated demo order, not a real Zepto order.'
         };
       }
 
@@ -359,6 +467,13 @@ export class ZeptoMcpTools {
         const targetId = args.orderId || zeptoStoreService.getLastOrderForSession(sessionId)?.orderId;
         if (!targetId) {
           return { success: false, message: 'No active orders found to cancel.' };
+        }
+        const order = zeptoStoreService.getOrder(targetId);
+        if (order?.isLive) {
+          return {
+            success: false,
+            message: 'This is a real Zepto order, but live cancellation isn\'t connected yet - please cancel it directly in the Zepto app.'
+          };
         }
         const result = zeptoStoreService.cancelOrder(targetId);
         return {

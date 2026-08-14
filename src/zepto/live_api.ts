@@ -189,13 +189,12 @@ export class ZeptoLiveApiService {
         trackingUrl: `https://app.zeptonow.com/order/${orderData.order_id || orderData.id}`
       };
     } catch (err: any) {
-      console.error('❌ Error placing live Zepto COD order:', err.response?.data || err.message);
-      // Return structured fallback confirmation
+      const message = err.response?.data?.message || err.message;
+      console.error('❌ Error placing live Zepto COD order:', err.response?.data || message);
       return {
-        simulated: true,
-        orderId: `ZP-${Math.floor(100000 + Math.random() * 900000)}`,
-        status: 'CONFIRMED',
-        paymentMode: 'CASH_ON_DELIVERY'
+        success: false,
+        error: message,
+        httpStatus: err.response?.status
       };
     }
   }

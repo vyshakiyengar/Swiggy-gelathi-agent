@@ -65,7 +65,9 @@ export class GeminiAgentService {
         });
 
         if (!trackRes.error) {
-          const trackReply = `📦 *Zepto Order Status:* \`${orderId}\`\n🛵 *Status:* ${trackRes.status}\n⚡ *Rider:* ${trackRes.rider?.name} (${trackRes.rider?.phone})\n⏳ *Arriving in:* ${trackRes.deliveryEtaMinutes} mins\n📍 *Live Map:* ${trackRes.trackingUrl}`;
+          const trackReply = trackRes.rider
+            ? `📦 *Zepto Order Status:* \`${orderId}\`\n🛵 *Status:* ${trackRes.status}\n⚡ *Rider:* ${trackRes.rider?.name} (${trackRes.rider?.phone})\n⏳ *Arriving in:* ${trackRes.deliveryEtaMinutes} mins\n📍 *Live Map:* ${trackRes.trackingUrl}`
+            : `📦 *Zepto Order Status:* \`${orderId}\`\n🛵 *Status:* ${trackRes.status}\n📍 *Live Map:* ${trackRes.trackingUrl}\n\nℹ️ ${trackRes.note || ''}`;
           return { reply: trackReply, toolCallsExecuted: toolLogs };
         }
       }
@@ -158,6 +160,11 @@ export class GeminiAgentService {
           orderDetails: placedOrderDetails
         };
       }
+
+      return {
+        reply: `❌ Sorry Amma, I couldn't place the order: ${placeResult.error || 'unknown error'}. Please try again in a bit, or ask Vyshak to check.`,
+        toolCallsExecuted: toolLogs
+      };
     }
 
     // Check for Item Removal / Modification ("bedi", "remove", "thegedubidi", "bedave beda")
