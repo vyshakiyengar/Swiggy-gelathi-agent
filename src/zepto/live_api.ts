@@ -47,9 +47,10 @@ export class ZeptoLiveApiService {
     }
   }
 
-  public setAuthToken(token: string) {
+  public setAuthToken(token: string, refreshToken?: string) {
     this.session = {
       authToken: token,
+      refreshToken: refreshToken || this.session?.refreshToken,
       phoneNumber: process.env.ZEPTO_PHONE_NUMBER || '',
       defaultAddressId: process.env.ZEPTO_ADDRESS_ID || '',
       defaultStoreId: process.env.ZEPTO_STORE_ID || '',
@@ -57,7 +58,27 @@ export class ZeptoLiveApiService {
     };
     this.client.defaults.headers.common['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
     this.isLiveConfigured = true;
-    console.log('✅ Real Zepto Account Session Loaded successfully!');
+
+    const expiry = this.decodeJwtExpiry(token);
+    if (expiry) {
+      const minutesLeft = Math.round((expiry.getTime() - Date.now()) / 60000);
+      console.log(`✅ Real Zepto Account Session Loaded! Token expires ${expiry.toISOString()} (~${minutesLeft} min from now)`);
+    } else {
+      console.log('✅ Real Zepto Account Session Loaded successfully! (token is not a decodable JWT, unknown expiry)');
+    }
+  }
+
+  /** Decodes a JWT's exp claim without verifying signature - just for logging/diagnostics, never trust for auth. */
+  private decodeJwtExpiry(token: string): Date | null {
+    try {
+      const raw = token.startsWith('Bearer ') ? token.slice(7) : token;
+      const payloadB64 = raw.split('.')[1];
+      if (!payloadB64) return null;
+      const payload = JSON.parse(Buffer.from(payloadB64, 'base64').toString('utf8'));
+      return payload.exp ? new Date(payload.exp * 1000) : null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -98,20 +119,29 @@ export class ZeptoLiveApiService {
       });
 
       const data = response.data;
-      const authToken = data.token || data.auth_token || data.data?.token || data.data?.access_token;
-      const userId = data.user_id || data.data?.user_id;
+      const inner = data.data || data;
+      const authToken = data.token || data.auth_token || inner.token || inner.access_token;
+      const refreshToken = data.refresh_token || data.refreshToken || inner.refresh_token || inner.refreshToken;
+      const userId = data.user_id || inner.user_id;
 
       if (!authToken) {
         throw new Error('No auth token returned in OTP verification response');
       }
 
-      this.setAuthToken(authToken);
+      // Diagnostic only - logs field names present in the response (not values), so we can
+      // tell whether Zepto's login actually issues a refresh token without exposing secrets.
+      console.log(`🔍 OTP verify response top-level keys: [${Object.keys(data).join(', ')}]`);
+      if (inner !== data) console.log(`🔍 OTP verify response nested "data" keys: [${Object.keys(inner).join(', ')}]`);
+      console.log(refreshToken ? '✅ A refresh token WAS found in the login response.' : '⚠️ No refresh token field found in the login response - session may need re-login on expiry.');
 
-      // Save token to .env file permanently
-      this.persistTokenToEnv(authToken, cleanPhone);
+      this.setAuthToken(authToken, refreshToken);
+
+      // Save token(s) to .env file permanently
+      this.persistTokenToEnv(authToken, cleanPhone, refreshToken);
 
       return {
         authToken,
+        refreshToken,
         phoneNumber: cleanPhone,
         userId
       };
@@ -199,7 +229,7 @@ export class ZeptoLiveApiService {
     }
   }
 
-  private persistTokenToEnv(authToken: string, phone: string) {
+  private persistTokenToEnv(authToken: string, phone: string, refreshToken?: string) {
     try {
       const envPath = path.join(__dirname, '../../.env');
       if (fs.existsSync(envPath)) {
@@ -208,6 +238,13 @@ export class ZeptoLiveApiService {
           content = content.replace(/ZEPTO_AUTH_TOKEN=.*/g, `ZEPTO_AUTH_TOKEN="${authToken}"`);
         } else {
           content += `\nZEPTO_AUTH_TOKEN="${authToken}"\nZEPTO_PHONE_NUMBER="${phone}"\n`;
+        }
+        if (refreshToken) {
+          if (content.includes('ZEPTO_REFRESH_TOKEN=')) {
+            content = content.replace(/ZEPTO_REFRESH_TOKEN=.*/g, `ZEPTO_REFRESH_TOKEN="${refreshToken}"`);
+          } else {
+            content += `ZEPTO_REFRESH_TOKEN="${refreshToken}"\n`;
+          }
         }
         fs.writeFileSync(envPath, content);
         console.log('💾 Zepto Auth Token saved permanently to .env!');
