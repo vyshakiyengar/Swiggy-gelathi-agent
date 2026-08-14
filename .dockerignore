@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.git
+.agents
+auth_info_baileys
+npm-debug.log

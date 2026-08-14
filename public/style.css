@@ -1,0 +1,708 @@
+:root {
+  --wa-teal: #008069;
+  --wa-teal-dark: #005c4b;
+  --wa-bg: #efeae2;
+  --wa-incoming-bg: #ffffff;
+  --wa-outgoing-bg: #d9fdd3;
+  --wa-text-primary: #111b21;
+  --wa-text-secondary: #667781;
+  --zepto-purple: #8b5cf6;
+  --zepto-purple-dark: #6d28d9;
+  --zepto-pink: #ec4899;
+  --card-bg: #ffffff;
+  --border-color: #e2e8f0;
+  --font-family: 'Inter', 'Noto Sans Kannada', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family);
+}
+
+body {
+  background-color: #0f172a;
+  color: var(--wa-text-primary);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  width: 100%;
+  max-width: 1350px;
+  height: 94vh;
+  background: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
+}
+
+/* --- WhatsApp Chat Window --- */
+.whatsapp-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-right: 1px solid var(--border-color);
+  position: relative;
+}
+
+.chat-header {
+  background-color: var(--wa-teal);
+  color: white;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.avatar-container {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  background: #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.status-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 11px;
+  height: 11px;
+  background-color: #22c55e;
+  border: 2px solid white;
+  border-radius: 50%;
+}
+
+.contact-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.contact-status {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.action-btn.link-wa-btn {
+  background: #25d366;
+  color: #075e54;
+  border-color: #ffffff;
+  font-weight: 700;
+}
+
+.action-btn.link-wa-btn:hover {
+  background: #1ebc59;
+}
+
+.lang-tag {
+  background: #f59e0b;
+  color: #78350f;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 12px;
+}
+
+/* Live Banner */
+.live-banner {
+  background: #ecfdf5;
+  border-bottom: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 12.5px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.live-pulse {
+  width: 8px;
+  height: 8px;
+  background: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+/* Quick Prompts Bar */
+.quick-prompts-bar {
+  background: #f8fafc;
+  padding: 8px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.quick-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.prompts-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.prompts-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.pill {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pill:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+/* Chat Messages */
+.chat-messages {
+  flex: 1;
+  background-color: var(--wa-bg);
+  background-image: radial-gradient(#d3c9be 1px, transparent 1px);
+  background-size: 20px 20px;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message-row {
+  display: flex;
+  width: 100%;
+}
+
+.message-row.incoming {
+  justify-content: flex-start;
+}
+
+.message-row.outgoing {
+  justify-content: flex-end;
+}
+
+.message-bubble {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  position: relative;
+  font-size: 14.5px;
+  line-height: 1.5;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  word-wrap: break-word;
+}
+
+.incoming .message-bubble {
+  background-color: var(--wa-incoming-bg);
+  border-top-left-radius: 2px;
+}
+
+.outgoing .message-bubble {
+  background-color: var(--wa-outgoing-bg);
+  border-top-right-radius: 2px;
+}
+
+.message-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--wa-text-secondary);
+}
+
+/* WhatsApp Pay Interactive Bubble Widget */
+.wappay-card {
+  margin-top: 12px;
+  background: #f8fafc;
+  border: 1.5px solid #22c55e;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.wappay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #15803d;
+  margin-bottom: 8px;
+}
+
+.wappay-btn {
+  width: 100%;
+  background: #25d366;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  box-shadow: 0 2px 4px rgba(37, 211, 102, 0.3);
+  transition: background 0.2s ease;
+}
+
+.wappay-btn:hover {
+  background: #1ebc59;
+}
+
+/* Chat Input */
+.chat-input-area {
+  background: #f0f2f5;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.input-form {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.input-form input {
+  flex: 1;
+  padding: 12px 18px;
+  border-radius: 24px;
+  border: 1px solid #e2e8f0;
+  outline: none;
+  font-size: 14.5px;
+  background: #ffffff;
+}
+
+.input-form input:focus {
+  border-color: var(--wa-teal);
+}
+
+.send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--wa-teal);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.2s ease;
+}
+
+.send-btn:hover {
+  background: var(--wa-teal-dark);
+  transform: scale(1.05);
+}
+
+/* --- Sidebar Panel (Cart & MCP Tools) --- */
+.sidebar-panel {
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.panel-section {
+  padding: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-header h3 {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.title-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.badge {
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.zepto-tag {
+  background: #f3e8ff;
+  color: #7e22ce;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
+.mcp-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
+
+/* Cart Items */
+.cart-items-container {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cart-item-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.cart-item-card img {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-info .item-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-info .item-kannada {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.item-info .item-price {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.item-qty-badge {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.empty-cart-state {
+  text-align: center;
+  padding: 24px 12px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.empty-cart-state span {
+  font-size: 11.5px;
+  display: block;
+  margin-top: 4px;
+}
+
+/* Cart Summary Box */
+.cart-summary-box {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  font-size: 12.5px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: #475569;
+}
+
+.summary-row.grand-total {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.free-text {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.address-preview {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* MCP Tool Inspector */
+.tools-section {
+  flex: 1;
+}
+
+.tool-logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.tool-log-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+
+.tool-header {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  color: #2563eb;
+  margin-bottom: 4px;
+}
+
+.tool-header .tool-time {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.tool-args {
+  font-family: monospace;
+  background: #f8fafc;
+  padding: 4px 6px;
+  border-radius: 4px;
+  color: #334155;
+  margin-bottom: 4px;
+  overflow-x: auto;
+}
+
+.no-tools-state {
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 10px;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 420px;
+  text-align: center;
+  position: relative;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+}
+
+.close-btn {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.modal-subtitle {
+  font-size: 12.5px;
+  color: #64748b;
+  margin-top: 4px;
+  margin-bottom: 16px;
+}
+
+.qr-image-wrapper {
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 12px;
+  display: inline-block;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 14px;
+}
+
+.qr-image-wrapper img {
+  width: 220px;
+  height: 220px;
+  display: block;
+}
+
+.modal-amount {
+  font-size: 15px;
+  margin-bottom: 16px;
+  color: #334155;
+}
+
+.modal-amount strong {
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.upi-app-btn {
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-block;
+  transition: opacity 0.2s ease;
+}
+
+.upi-app-btn.gpay {
+  background: #1a73e8;
+  color: white;
+}
+
+.upi-app-btn.phonepe {
+  background: #5f259f;
+  color: white;
+}
+
+.upi-app-btn.wappay {
+  grid-column: span 2;
+  background: #25d366;
+  color: white;
+  margin-top: 4px;
+}
+
+.upi-app-btn:hover {
+  opacity: 0.9;
+}

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zepto Mom Assistant (Meta WhatsApp Cloud API & MCP Server)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- WhatsApp Window Container -->
+    <main class="whatsapp-container">
+      <!-- Chat Header -->
+      <header class="chat-header">
+        <div class="header-left">
+          <div class="avatar-container">
+            <div class="avatar-icon">🛒</div>
+            <span class="status-indicator"></span>
+          </div>
+          <div class="header-details">
+            <h2 class="contact-name">Zepto Amma Sahayaka ⚡</h2>
+            <p id="liveStatusText" class="contact-status">Meta WhatsApp Cloud API & MCP Active</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button id="metaSetupBtn" class="action-btn link-wa-btn" title="Meta Cloud API Webhook Guide">📲 Meta Cloud API</button>
+          <button id="mcpConfigBtn" class="action-btn" title="View MCP Server Config">⚙️ MCP Config</button>
+          <button id="clearChatBtn" class="action-btn" title="Clear Chat & Cart">🔄 Reset</button>
+          <span class="lang-tag">ಕನ್ನಡ / English</span>
+        </div>
+      </header>
+
+      <!-- Connection Alert Banner -->
+      <div id="liveBanner" class="live-banner">
+        <span class="live-pulse"></span>
+        <span id="bannerStatusText">📲 <strong>Meta WhatsApp Cloud API Ready:</strong> Webhook active at <code>/webhook/whatsapp</code>. Test chats below or send live messages!</span>
+      </div>
+
+      <!-- Quick Suggestion Pills for Mom -->
+      <div class="quick-prompts-bar">
+        <span class="quick-label">Amma's Prompts:</span>
+        <div class="prompts-scroll">
+          <button class="pill" data-msg="1 packet Nandini halu, 6 motte, 100g amul benne">🥛 1 packet halu, 6 motte, 100g benne</button>
+          <button class="pill" data-msg="5kg sona masoori akki, 1kg togari bele, kottambari soppu">🍚 5kg akki, 1kg togari bele, kottambari</button>
+          <button class="pill" data-msg="1 iD dosa batter, cothas coffee pudi, 1 loaf godhi bread">☕ iD dosa batter, cothas coffee, bread</button>
+          <button class="pill" data-msg="Apply coupon ZEPTO50">🏷️ Apply coupon ZEPTO50</button>
+          <button class="pill" data-msg="Bread bedi, 2 packet halu maadi">❌ Bread bedi, 2 packet halu maadi</button>
+          <button class="pill" data-msg="Theek ide, COD order maadi!">💵 Theek ide, COD order maadi!</button>
+          <button class="pill" data-msg="UPI alli pay madtini, order maadi">💳 UPI alli pay madtini, order maadi</button>
+        </div>
+      </div>
+
+      <!-- Chat Messages List -->
+      <section id="chatMessages" class="chat-messages">
+        <!-- Initial Agent Greeting -->
+        <div class="message-row incoming">
+          <div class="message-bubble">
+            <div class="message-content">
+              <strong>ನಮಸ್ಕಾರ ಅಮ್ಮ! (Namaskara Amma!) 🙏</strong><br><br>
+              I am your Zepto grocery assistant connected via <strong>Meta WhatsApp Cloud API</strong> and <strong>Model Context Protocol (MCP)</strong>.<br><br>
+              You can message me in <em>Kannada</em>, <em>Kanglish</em>, or <em>English</em>.<br>
+              We support <strong>💵 Cash on Delivery (COD)</strong> and <strong>💳 WhatsApp Pay / UPI Deep Links</strong>!
+            </div>
+            <div class="message-meta">
+              <span class="timestamp">Just now</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Chat Input Area -->
+      <footer class="chat-input-area">
+        <form id="chatForm" class="input-form">
+          <input 
+            type="text" 
+            id="messageInput" 
+            placeholder="Type a message (e.g., '1 packet halu, 6 motte, kottambari soppu')..." 
+            autocomplete="off"
+            required
+          />
+          <button type="submit" id="sendBtn" class="send-btn" title="Send Message">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+            </svg>
+          </button>
+        </form>
+      </footer>
+    </main>
+
+    <!-- Side Panel: Live Zepto Cart & MCP Tool Inspector -->
+    <aside class="sidebar-panel">
+      <!-- Live Cart Widget -->
+      <div class="panel-section cart-section">
+        <div class="section-header">
+          <div class="title-with-badge">
+            <h3>🛒 Live Zepto Cart</h3>
+            <span id="cartCountBadge" class="badge">0 items</span>
+          </div>
+          <div class="zepto-tag">⚡ 10 Mins</div>
+        </div>
+
+        <div id="cartItemsList" class="cart-items-container">
+          <div class="empty-cart-state">
+            <p>Cart is currently empty.</p>
+            <span>Ask Amma's assistant to add groceries!</span>
+          </div>
+        </div>
+
+        <div class="cart-summary-box">
+          <div class="summary-row">
+            <span>Item Subtotal:</span>
+            <span id="cartSubtotal">₹0</span>
+          </div>
+          <div id="discountRow" class="summary-row" style="display:none; color:#16a34a;">
+            <span>Discount:</span>
+            <span id="cartDiscount">-₹0</span>
+          </div>
+          <div class="summary-row">
+            <span>Delivery Fee:</span>
+            <span id="cartDeliveryFee" class="free-text">FREE</span>
+          </div>
+          <div class="summary-row">
+            <span>Handling Fee:</span>
+            <span id="cartHandlingFee">₹0</span>
+          </div>
+          <div class="summary-row grand-total">
+            <span>Grand Total:</span>
+            <span id="cartGrandTotal">₹0</span>
+          </div>
+          <div class="address-preview">
+            📍 <strong>Deliver to:</strong> <span id="deliveryAddressText">Flat 302, Bengaluru</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- MCP Tool Traces -->
+      <div class="panel-section tools-section">
+        <div class="section-header">
+          <h3>🛠️ Gemini MCP Tool Inspector</h3>
+          <span class="mcp-badge">@modelcontextprotocol/sdk</span>
+        </div>
+        <div id="toolLogsContainer" class="tool-logs-list">
+          <div class="no-tools-state">
+            MCP Tool calls (search_zepto_products, add_to_cart, apply_coupon, place_order, track_order) appear here in real time.
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Meta WhatsApp Cloud API Setup Modal -->
+  <div id="metaSetupModal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 580px;">
+      <button id="closeMetaModalBtn" class="close-btn">&times;</button>
+      <h3>📲 Meta WhatsApp Cloud API Setup</h3>
+      <p class="modal-subtitle">Configure your live WhatsApp Business number:</p>
+      
+      <div style="text-align:left; font-size:12.5px; color:#334155; line-height:1.6; background:#f8fafc; padding:12px; border-radius:8px; margin-bottom:14px; border:1px solid #e2e8f0;">
+        <strong>1. Webhook URL:</strong> <code>https://your-public-domain.ngrok-free.app/webhook/whatsapp</code><br>
+        <strong>2. Verify Token:</strong> <code>zepto_mom_agent_secret_2026</code> (from your <code>.env</code>)<br>
+        <strong>3. Webhook Subscriptions:</strong> Subscribe to <code>messages</code> in Meta Developer Portal.
+      </div>
+
+      <div style="text-align:left; margin-bottom:12px;">
+        <label style="font-size:12px; font-weight:600; color:#475569; display:block; margin-bottom:4px;">Send Direct Test Message to Real Phone Number:</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="testRecipientPhone" placeholder="919876543210 (with country code)" style="flex:1; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px;" />
+          <button id="sendTestMsgBtn" style="background:#008069; color:white; border:none; padding:8px 14px; border-radius:6px; font-weight:600; cursor:pointer;">Send Test</button>
+        </div>
+        <p id="testSendStatus" style="font-size:12px; margin-top:6px; color:#64748b;"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP Config Modal -->
+  <div id="mcpConfigModal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 620px;">
+      <button id="closeMcpModalBtn" class="close-btn">&times;</button>
+      <h3>⚙️ Zepto MCP Server Configuration</h3>
+      <p class="modal-subtitle">Add this standard MCP server to Antigravity, Claude Desktop, or Cursor:</p>
+      
+      <pre style="text-align:left; background:#0f172a; color:#38bdf8; padding:14px; border-radius:8px; font-size:11.5px; overflow-x:auto; line-height:1.5;">
+{
+  "mcpServers": {
+    "zepto-grocery": {
+      "command": "node",
+      "args": ["/Users/vyshakiyengar/.gemini/antigravity-ide/scratch/zepto-whatsapp-agent/dist/mcp/stdio_server.js"]
+    }
+  }
+}</pre>
+
+      <div style="text-align:left; font-size:12px; color:#475569; margin-top:10px;">
+        <strong>Available Tools:</strong> <code>search_zepto_products</code>, <code>get_product_details</code>, <code>add_to_cart</code>, <code>get_cart</code>, <code>update_cart_quantity</code>, <code>remove_from_cart</code>, <code>apply_coupon</code>, <code>place_order</code>, <code>track_order</code>.
+      </div>
+    </div>
+  </div>
+
+  <!-- QR Code Payment Modal -->
+  <div id="qrModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <button id="closeModalBtn" class="close-btn">&times;</button>
+      <h3>📱 Scan & Pay via UPI / WhatsApp Pay</h3>
+      <p class="modal-subtitle">Pay securely using any UPI app (WhatsApp Pay, GPay, PhonePe, Paytm)</p>
+      <div class="qr-image-wrapper">
+        <img id="qrImage" src="" alt="UPI QR Code" />
+      </div>
+      <div class="modal-amount">
+        <span>Amount Payable:</span>
+        <strong id="modalAmountText">₹0</strong>
+      </div>
+      <div class="modal-actions">
+        <a id="gpayDirectBtn" href="#" class="upi-app-btn gpay">Open GPay</a>
+        <a id="phonepeDirectBtn" href="#" class="upi-app-btn phonepe">Open PhonePe</a>
+        <a id="whatsappPayDirectBtn" href="#" class="upi-app-btn wappay">🟢 WhatsApp Pay</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
