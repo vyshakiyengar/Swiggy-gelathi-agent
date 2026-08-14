@@ -137,16 +137,32 @@ export class ZeptoMcpTools {
     },
     {
       name: 'track_order',
-      description: 'Check live order status, rider name, phone, and ETA for a placed order.',
+      description: 'Check live order status, rider name, phone, and ETA for a placed order. If orderId is omitted, automatically checks the user\'s latest order.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
           orderId: {
             type: SchemaType.STRING,
-            description: 'Order ID (e.g. ZP-123456)'
+            description: 'Order ID (optional, e.g. ZP-123456)'
           }
-        },
-        required: ['orderId']
+        }
+      }
+    },
+    {
+      name: 'cancel_order',
+      description: 'Cancel an active Zepto grocery order. Works if order is packing or before delivery. If orderId is omitted, automatically cancels the user\'s latest order.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          orderId: {
+            type: SchemaType.STRING,
+            description: 'Order ID to cancel (optional)'
+          },
+          reason: {
+            type: SchemaType.STRING,
+            description: 'Reason for cancellation if specified by user'
+          }
+        }
       }
     }
   ];
@@ -320,10 +336,13 @@ export class ZeptoMcpTools {
       }
 
       case 'track_order': {
-        const { orderId } = args;
-        const order = zeptoStoreService.getOrder(orderId);
+        const targetId = args.orderId || zeptoStoreService.getLastOrderForSession(sessionId)?.orderId;
+        if (!targetId) {
+          return { error: 'No recent orders found for this session.' };
+        }
+        const order = zeptoStoreService.getOrder(targetId);
         if (!order) {
-          return { error: `Order ${orderId} not found.` };
+          return { error: `Order ${targetId} not found.` };
         }
         return {
           orderId: order.orderId,
@@ -333,6 +352,18 @@ export class ZeptoMcpTools {
           rider: { name: order.riderName, phone: order.riderPhone },
           deliveryAddress: order.deliveryAddress,
           trackingUrl: order.trackingUrl
+        };
+      }
+
+      case 'cancel_order': {
+        const targetId = args.orderId || zeptoStoreService.getLastOrderForSession(sessionId)?.orderId;
+        if (!targetId) {
+          return { success: false, message: 'No active orders found to cancel.' };
+        }
+        const result = zeptoStoreService.cancelOrder(targetId);
+        return {
+          ...result,
+          reason: args.reason
         };
       }
 

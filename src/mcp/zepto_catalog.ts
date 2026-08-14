@@ -591,6 +591,32 @@ export class ZeptoStoreService {
   public getOrder(orderId: string): PlacedOrder | undefined {
     return this.placedOrders.get(orderId);
   }
+
+  public getLastOrderForSession(sessionId: string): PlacedOrder | undefined {
+    const orders = Array.from(this.placedOrders.values()).filter((o) => o.sessionId === sessionId);
+    return orders.length > 0 ? orders[orders.length - 1] : undefined;
+  }
+
+  public cancelOrder(orderId: string): { success: boolean; message: string; order?: PlacedOrder } {
+    const order = this.placedOrders.get(orderId);
+    if (!order) {
+      return { success: false, message: `Order #${orderId} not found.` };
+    }
+    if (order.status === 'DELIVERED') {
+      return { success: false, message: `Order #${orderId} has already been delivered and cannot be cancelled.` };
+    }
+    if (order.status === 'CANCELLED') {
+      return { success: false, message: `Order #${orderId} is already cancelled.` };
+    }
+
+    order.status = 'CANCELLED';
+    this.placedOrders.set(orderId, order);
+    return {
+      success: true,
+      message: `Order #${orderId} has been successfully cancelled. Any online payment will be refunded to your source UPI within 2 hours.`,
+      order
+    };
+  }
 }
 
 export const zeptoStoreService = new ZeptoStoreService();
