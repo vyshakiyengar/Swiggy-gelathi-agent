@@ -26,7 +26,7 @@ class SwiggyMcpService {
     const transport = new StreamableHTTPClientTransport(new URL(SWIGGY_MCP_URL), {
       requestInit: { headers: { Authorization: `Bearer ${token}` } }
     });
-    const client = new Client({ name: 'zepto-agent-whatsapp-bot', version: '1.0.0' }, { capabilities: {} });
+    const client = new Client({ name: 'swiggy-instamart-whatsapp-bot', version: '1.0.0' }, { capabilities: {} });
 
     await client.connect(transport);
     try {

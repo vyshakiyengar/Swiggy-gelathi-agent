@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import { geminiAgentService } from '../agent/gemini';
-import { zeptoStoreService } from '../mcp/zepto_catalog';
 import { whatsAppCloudApiService } from './cloud_api';
 
 /**
@@ -12,14 +11,11 @@ export const verifyWhatsAppWebhook = (req: Request, res: Response) => {
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'zepto_mom_agent_secret_2026';
+  const expectedToken = process.env.WHATSAPP_VERIFY_TOKEN || 'swiggy_amma_agent_secret_2026';
 
   console.log(`🔍 Received WhatsApp Webhook verification request: mode="${mode}", token="${token}"`);
 
-  if (
-    mode === 'subscribe' &&
-    (token === expectedToken || token === 'zepto_mom_agent_secret_2026' || token === 'zepto_mom_agent_secret')
-  ) {
+  if (mode === 'subscribe' && token === expectedToken) {
     console.log('✅ Meta WhatsApp Webhook verified successfully!');
     return res.status(200).send(challenge);
   } else {
@@ -60,25 +56,11 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
       if (messageType === 'text') {
         incomingText = messageObj.text?.body || '';
       }
-      // 2. Interactive Button Click (e.g. "⚡ Pay with UPI" / "💵 Cash on Delivery")
+      // 2. Interactive Button/List Click
       else if (messageType === 'interactive') {
         const interactiveType = messageObj.interactive?.type;
         if (interactiveType === 'button_reply') {
-          const buttonId = messageObj.interactive.button_reply.id;
-          const buttonTitle = messageObj.interactive.button_reply.title;
-
-          if (buttonId === 'btn_confirm_upi') {
-            incomingText = 'Confirm order with UPI';
-          } else if (buttonId === 'btn_confirm_cod') {
-            incomingText = 'Confirm order with Cash on Delivery';
-          } else if (buttonId === 'btn_clear_cart') {
-            incomingText = 'Clear cart';
-          } else if (buttonId.startsWith('btn_track_')) {
-            const orderId = buttonId.replace('btn_track_', '');
-            incomingText = `Track order ${orderId}`;
-          } else {
-            incomingText = buttonTitle || buttonId;
-          }
+          incomingText = messageObj.interactive.button_reply.title || messageObj.interactive.button_reply.id;
         } else if (interactiveType === 'list_reply') {
           incomingText = messageObj.interactive.list_reply.title || messageObj.interactive.list_reply.id;
         }
@@ -91,27 +73,11 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
       if (incomingText.trim()) {
         console.log(`\n📱 [Incoming WhatsApp from +${fromNumber}]: "${incomingText}"`);
 
-        // Process message with Gemini Agent & Zepto MCP
         const agentResponse = await geminiAgentService.processMessage(fromNumber, incomingText);
 
         console.log(`🤖 [Agent Reply for +${fromNumber}]:\n${agentResponse.reply}`);
 
-        // If order was placed, send rich order confirmation
-        if (agentResponse.orderDetails) {
-          await whatsAppCloudApiService.sendOrderConfirmation(fromNumber, agentResponse.orderDetails);
-        } else {
-          // If active cart has items, attach interactive action buttons
-          const currentCart = zeptoStoreService.getOrCreateCart(fromNumber);
-          if (currentCart.items.length > 0) {
-            await whatsAppCloudApiService.sendCartSummaryWithActions(
-              fromNumber,
-              agentResponse.reply,
-              currentCart
-            );
-          } else {
-            await whatsAppCloudApiService.sendTextMessage(fromNumber, agentResponse.reply);
-          }
-        }
+        await whatsAppCloudApiService.sendTextMessage(fromNumber, agentResponse.reply);
       }
     }
   } catch (error) {

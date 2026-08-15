@@ -21,7 +21,7 @@ async function sendReminderIfDue() {
 
   const link = swiggyAuthService.generateAuthorizeUrl();
   const message =
-    `🛒 *Zepto Agent: Swiggy relink needed*\n\n` +
+    `🛒 *Grocery Agent: Swiggy relink needed*\n\n` +
     `The grocery ordering session ${status.valid ? 'is about to expire' : 'has expired'}. Tap this link and approve to keep ordering working:\n\n` +
     `${link}\n\n` +
     `Takes a few seconds - no laptop or app needed.`;
