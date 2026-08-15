@@ -1,6 +1,21 @@
 import { Request, Response } from 'express';
 import { geminiAgentService } from '../agent/gemini';
-import { whatsAppCloudApiService } from './cloud_api';
+import { whatsAppCloudApiService, WhatsAppButton } from './cloud_api';
+
+// Payment method buttons - the only place in the flow that uses interactive buttons.
+// Mapped to unambiguous instruction text rather than trusting the model to recall the exact
+// intentApp id from a button title alone, since this step moves real money.
+const PAYMENT_METHOD_BUTTONS: WhatsAppButton[] = [
+  { id: 'pay_cod', title: '💵 Cash on Delivery' },
+  { id: 'pay_gpay', title: '📱 Google Pay' },
+  { id: 'pay_phonepe', title: '📱 PhonePe' }
+];
+
+const PAYMENT_BUTTON_ID_TO_INSTRUCTION: Record<string, string> = {
+  pay_cod: 'Pay by Cash on Delivery',
+  pay_gpay: 'Pay by UPI using Google Pay',
+  pay_phonepe: 'Pay by UPI using PhonePe'
+};
 
 /**
  * Handles Meta WhatsApp Cloud API Webhook Verification (GET)
@@ -60,7 +75,11 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
       else if (messageType === 'interactive') {
         const interactiveType = messageObj.interactive?.type;
         if (interactiveType === 'button_reply') {
-          incomingText = messageObj.interactive.button_reply.title || messageObj.interactive.button_reply.id;
+          const buttonId = messageObj.interactive.button_reply.id;
+          incomingText =
+            PAYMENT_BUTTON_ID_TO_INSTRUCTION[buttonId] ||
+            messageObj.interactive.button_reply.title ||
+            buttonId;
         } else if (interactiveType === 'list_reply') {
           incomingText = messageObj.interactive.list_reply.title || messageObj.interactive.list_reply.id;
         }
@@ -78,6 +97,17 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
         console.log(`🤖 [Agent Reply for +${fromNumber}]:\n${agentResponse.reply}`);
 
         await whatsAppCloudApiService.sendTextMessage(fromNumber, agentResponse.reply);
+
+        const showedPaymentOptions = agentResponse.toolCallsExecuted.some(
+          (t) => t.toolName === 'get_payment_options' && t.result?.success !== false
+        );
+        if (showedPaymentOptions) {
+          await whatsAppCloudApiService.sendInteractiveButtons(
+            fromNumber,
+            'Tap to choose how you\'d like to pay:',
+            PAYMENT_METHOD_BUTTONS
+          );
+        }
       }
     }
   } catch (error) {
