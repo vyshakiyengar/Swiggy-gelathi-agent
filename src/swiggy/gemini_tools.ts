@@ -2,6 +2,8 @@ import { FunctionDeclaration, Schema, SchemaType } from '@google/generative-ai';
 import { swiggyMcpService } from './mcp_client';
 
 const DEFAULT_ADDRESS_ID = process.env.SWIGGY_DEFAULT_ADDRESS_ID || '112427323';
+const DEFAULT_LAT = Number(process.env.SWIGGY_DEFAULT_LAT) || 12.907784;
+const DEFAULT_LNG = Number(process.env.SWIGGY_DEFAULT_LNG) || 77.545805;
 
 /**
  * Tools exposed to the conversational agent. get_addresses is intentionally excluded - this
@@ -23,12 +25,24 @@ const EXPOSED_TOOLS = [
   'confirm_order'
 ];
 
-/** Which parameter on each tool is the delivery address - stripped from what the model sees, and auto-filled server-side. */
-const ADDRESS_PARAM_BY_TOOL: Record<string, string> = {
-  search_products: 'addressId',
-  your_go_to_items: 'addressId',
-  update_cart: 'selectedAddressId',
-  checkout: 'addressId'
+/**
+ * Params auto-filled server-side per tool, stripped from what the model sees. Covers the fixed
+ * delivery address, and - for track_order - lat/lng too: despite get_orders's own description
+ * promising "delivery address coordinates" in its response, they're not actually present
+ * (confirmed empirically), so the model has no real way to source them for the required
+ * lat/lng on track_order. Since the address is fixed anyway, its known coordinates are injected
+ * the same way as the address ID.
+ */
+const AUTO_INJECTED_PARAMS_BY_TOOL: Record<string, () => Record<string, any>> = {
+  search_products: () => ({ addressId: DEFAULT_ADDRESS_ID }),
+  your_go_to_items: () => ({ addressId: DEFAULT_ADDRESS_ID }),
+  update_cart: () => ({ selectedAddressId: DEFAULT_ADDRESS_ID }),
+  checkout: () => ({ addressId: DEFAULT_ADDRESS_ID }),
+  track_order: () => ({ lat: DEFAULT_LAT, lng: DEFAULT_LNG }),
+  // Instamart grocery orders are tagged orderType "DASH" (confirmed empirically), not
+  // "INSTAMART" - despite that being the more obvious-looking example value in the tool's own
+  // parameter description. Forced here so the model can't guess wrong and see zero orders.
+  get_orders: () => ({ orderType: 'DASH' })
 };
 
 function convertJsonSchemaToGemini(schema: any): Schema {
@@ -73,10 +87,12 @@ export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclarati
     if (!EXPOSED_TOOLS.includes(tool.name)) continue;
 
     const schema = JSON.parse(JSON.stringify(tool.inputSchema));
-    const addressParam = ADDRESS_PARAM_BY_TOOL[tool.name];
-    if (addressParam && schema.properties) {
-      delete schema.properties[addressParam];
-      schema.required = (schema.required || []).filter((r: string) => r !== addressParam);
+    const injectedParams = AUTO_INJECTED_PARAMS_BY_TOOL[tool.name];
+    if (injectedParams && schema.properties) {
+      for (const paramName of Object.keys(injectedParams())) {
+        delete schema.properties[paramName];
+        schema.required = (schema.required || []).filter((r: string) => r !== paramName);
+      }
     }
 
     declarations.push({
@@ -90,9 +106,9 @@ export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclarati
   return declarations;
 }
 
-/** Executes a Swiggy MCP tool call on behalf of the agent, auto-injecting the fixed family delivery address. */
+/** Executes a Swiggy MCP tool call on behalf of the agent, auto-injecting fixed params (address, and lat/lng for tracking). */
 export async function executeSwiggyTool(toolName: string, args: Record<string, any>): Promise<any> {
-  const addressParam = ADDRESS_PARAM_BY_TOOL[toolName];
-  const finalArgs = addressParam ? { ...args, [addressParam]: DEFAULT_ADDRESS_ID } : args;
+  const injectedParams = AUTO_INJECTED_PARAMS_BY_TOOL[toolName];
+  const finalArgs = injectedParams ? { ...args, ...injectedParams() } : args;
   return swiggyMcpService.callTool(toolName, finalArgs);
 }
