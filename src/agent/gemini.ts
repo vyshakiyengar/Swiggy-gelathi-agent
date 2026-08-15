@@ -294,16 +294,15 @@ export class GeminiAgentService {
         tools: [{ functionDeclarations: ZeptoMcpTools.declarations }]
       });
 
-      history.push({
-        role: 'user',
-        parts: [{ text: userMessage }]
-      });
+      // NOTE: ChatSession.sendMessage() is unusable for tool-result turns - the SDK
+      // (@google/generative-ai) hardcodes role:"function" for any functionResponse part
+      // (see assignRoleToPartsAndValidateSendMessageRequest in its dist bundle), and the
+      // live Gemini API now rejects that role entirely. We manage the turn contents
+      // ourselves via generateContent() so function results can be sent as role:"user",
+      // which is what the API actually accepts.
+      const turnContents: Content[] = [...history, { role: 'user', parts: [{ text: userMessage }] }];
 
-      const chat = model.startChat({
-        history: history.slice(0, -1)
-      });
-
-      let currentResponse = await chat.sendMessage(userMessage);
+      let currentResponse = await model.generateContent({ contents: turnContents });
 
       let iterations = 0;
       const MAX_ITERATIONS = 6;
@@ -314,6 +313,11 @@ export class GeminiAgentService {
 
         if (!functionCalls || functionCalls.length === 0) {
           break;
+        }
+
+        const modelContent = currentResponse.response.candidates?.[0]?.content;
+        if (modelContent) {
+          turnContents.push({ role: 'model', parts: modelContent.parts });
         }
 
         const functionResponseParts: Part[] = [];
@@ -343,11 +347,16 @@ export class GeminiAgentService {
           });
         }
 
-        currentResponse = await chat.sendMessage(functionResponseParts);
+        turnContents.push({ role: 'user', parts: functionResponseParts });
+        currentResponse = await model.generateContent({ contents: turnContents });
       }
 
       const finalReplyText = currentResponse.response.text();
 
+      history.push({
+        role: 'user',
+        parts: [{ text: userMessage }]
+      });
       history.push({
         role: 'model',
         parts: [{ text: finalReplyText }]
