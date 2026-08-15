@@ -9,6 +9,8 @@ import {
   verifyWhatsAppWebhook,
   handleWhatsAppIncomingMessage
 } from './whatsapp/webhook';
+import { swiggyAuthService } from './swiggy/auth';
+import { startSwiggyReloginReminderCron } from './swiggy/relogin_reminder';
 
 dotenv.config();
 
@@ -26,6 +28,40 @@ app.use(express.static(path.join(__dirname, '../public')));
 // --- Meta WhatsApp Cloud API Webhook Endpoints ---
 app.get('/webhook/whatsapp', verifyWhatsAppWebhook);
 app.post('/webhook/whatsapp', handleWhatsAppIncomingMessage);
+
+// --- Swiggy Instamart MCP OAuth ---
+
+/**
+ * OAuth redirect target for the Swiggy Instamart MCP login. Tapping the relink link (sent via
+ * WhatsApp by the reminder cron, or visited directly) redirects here with a code, which is
+ * exchanged for a fresh access token entirely server-side - no laptop or code required.
+ */
+app.get('/swiggy/oauth/callback', async (req: Request, res: Response) => {
+  const { code, state, error: oauthError } = req.query;
+
+  if (oauthError) {
+    return res.status(400).send(`<h2>Swiggy login failed</h2><p>${oauthError}</p>`);
+  }
+  if (typeof code !== 'string' || typeof state !== 'string') {
+    return res.status(400).send('<h2>Missing code or state</h2>');
+  }
+
+  const result = await swiggyAuthService.handleCallback(code, state);
+  if (!result.success) {
+    return res.status(400).send(`<h2>Swiggy login failed</h2><p>${result.error}</p><p>Ask Vyshak for a fresh link.</p>`);
+  }
+
+  res.send('<h2>✅ Swiggy linked successfully!</h2><p>You can close this tab. The grocery bot is ready again.</p>');
+});
+
+/** Manual trigger to get a fresh login link without waiting for the cron reminder. */
+app.get('/swiggy/relogin-link', (req: Request, res: Response) => {
+  res.json({ url: swiggyAuthService.generateAuthorizeUrl() });
+});
+
+app.get('/swiggy/status', (req: Request, res: Response) => {
+  res.json(swiggyAuthService.getSessionStatus());
+});
 
 // --- API Endpoints for Simulator & Frontend ---
 
@@ -117,4 +153,6 @@ app.listen(PORT, () => {
   console.log(`📱 WhatsApp Web Simulator & Dashboard: http://localhost:${PORT}`);
   console.log(`🔗 Meta WhatsApp Webhook URL: http://localhost:${PORT}/webhook/whatsapp`);
   console.log(`======================================================\n`);
+
+  startSwiggyReloginReminderCron();
 });

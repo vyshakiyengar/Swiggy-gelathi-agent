@@ -3,6 +3,8 @@ import { AGENT_SYSTEM_PROMPT } from './prompts';
 import { ZeptoMcpTools } from '../mcp/zepto_server';
 import { zeptoStoreService, Cart, PlacedOrder } from '../mcp/zepto_catalog';
 import { WhatsAppFormatter } from '../whatsapp/formatter';
+import { getSwiggyFunctionDeclarations, executeSwiggyTool } from '../swiggy/gemini_tools';
+import { SwiggySessionExpiredError } from '../swiggy/mcp_client';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -291,7 +293,7 @@ export class GeminiAgentService {
       const model = this.genAI.getGenerativeModel({
         model: this.primaryModelName,
         systemInstruction: AGENT_SYSTEM_PROMPT,
-        tools: [{ functionDeclarations: ZeptoMcpTools.declarations }]
+        tools: [{ functionDeclarations: await getSwiggyFunctionDeclarations() }]
       });
 
       // NOTE: ChatSession.sendMessage() is unusable for tool-result turns - the SDK
@@ -326,11 +328,7 @@ export class GeminiAgentService {
           const toolName = call.name;
           const args = call.args as Record<string, any>;
 
-          const result = await ZeptoMcpTools.executeTool(sessionId, toolName, args);
-
-          if (toolName === 'place_order' && result.status === 'ORDER_PLACED_SUCCESSFULLY') {
-            placedOrderDetails = result.orderDetails;
-          }
+          const result = await executeSwiggyTool(toolName, args);
 
           toolLogs.push({
             toolName,
@@ -368,6 +366,15 @@ export class GeminiAgentService {
         orderDetails: placedOrderDetails
       };
     } catch (error: any) {
+      if (error instanceof SwiggySessionExpiredError) {
+        // Don't fall back to the local demo engine here - that would silently hand Amma a fake
+        // "confirmed" cart with no indication anything is wrong. Say so honestly instead.
+        console.warn('⚠️ Swiggy session expired mid-conversation.');
+        return {
+          reply: '⚠️ Sorry Amma, the grocery ordering session has expired. Please ask Vyshak to relink it (he gets a WhatsApp reminder automatically) and try again in a bit.',
+          toolCallsExecuted: toolLogs
+        };
+      }
       console.warn('⚠️ Gemini API error, falling back to local NLP engine:', error.message);
       return this.fallbackNlpEngine(sessionId, userMessage);
     }
