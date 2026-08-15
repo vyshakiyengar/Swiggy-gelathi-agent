@@ -24,6 +24,22 @@ const NOT_CONFIGURED_REPLY =
 const UNAVAILABLE_REPLY =
   '⚠️ Sorry Amma, I\'m having trouble understanding right now. Please try again in a moment, or ask Vyshak to check.';
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** True for a Gemini free-tier rate-limit error (429), which is transient and worth a short retry. */
+function isRateLimitError(error: any): boolean {
+  return typeof error?.message === 'string' && /429|Too Many Requests|quota/i.test(error.message);
+}
+
+/** Parses the server-suggested retry delay (e.g. `"retryDelay":"26s"`) out of the error message, if present. */
+function parseRetryDelayMs(error: any, fallbackMs: number): number {
+  const match = typeof error?.message === 'string' ? error.message.match(/retryDelay":"(\d+)s"/) : null;
+  const seconds = match ? parseInt(match[1], 10) : null;
+  return seconds ? Math.min(seconds * 1000, 30000) : fallbackMs;
+}
+
 export class GeminiAgentService {
   private genAI: GoogleGenerativeAI;
   private primaryModelName: string;
@@ -44,6 +60,22 @@ export class GeminiAgentService {
 
   public clearHistory(sessionId: string): void {
     this.conversationMemory.delete(sessionId);
+  }
+
+  /** Wraps model.generateContent() with a short retry on transient free-tier rate limits. */
+  private async generateContentWithRetry(model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>, contents: Content[]) {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await model.generateContent({ contents });
+      } catch (error: any) {
+        if (!isRateLimitError(error) || attempt === MAX_ATTEMPTS) throw error;
+        const delayMs = parseRetryDelayMs(error, 5000 * attempt);
+        console.warn(`⚠️ Gemini rate limit hit (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${Math.round(delayMs / 1000)}s...`);
+        await sleep(delayMs);
+      }
+    }
+    throw new Error('unreachable');
   }
 
   /**
@@ -73,7 +105,7 @@ export class GeminiAgentService {
       // which is what the API actually accepts.
       const turnContents: Content[] = [...history, { role: 'user', parts: [{ text: userMessage }] }];
 
-      let currentResponse = await model.generateContent({ contents: turnContents });
+      let currentResponse = await this.generateContentWithRetry(model, turnContents);
 
       let iterations = 0;
       const MAX_ITERATIONS = 6;
@@ -115,7 +147,7 @@ export class GeminiAgentService {
         }
 
         turnContents.push({ role: 'user', parts: functionResponseParts });
-        currentResponse = await model.generateContent({ contents: turnContents });
+        currentResponse = await this.generateContentWithRetry(model, turnContents);
       }
 
       const finalReplyText = currentResponse.response.text();
@@ -138,6 +170,13 @@ export class GeminiAgentService {
         console.warn('⚠️ Swiggy session expired mid-conversation.');
         return {
           reply: '⚠️ Sorry Amma, the grocery ordering session has expired. Please ask Vyshak to relink it (he gets a WhatsApp reminder automatically) and try again in a bit.',
+          toolCallsExecuted: toolLogs
+        };
+      }
+      if (isRateLimitError(error)) {
+        console.error('❌ Gemini rate limit exhausted retries:', error.message);
+        return {
+          reply: '⚠️ Sorry Amma, I\'m a bit overloaded right now (too many requests). Please wait a minute and try again.',
           toolCallsExecuted: toolLogs
         };
       }
