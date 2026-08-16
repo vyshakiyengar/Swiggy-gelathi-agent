@@ -18,6 +18,8 @@ export interface AgentResponse {
   toolCallsExecuted: ToolCallLog[];
 }
 
+export type UserInput = { type: 'text'; text: string } | { type: 'audio'; data: Buffer; mimeType: string };
+
 const NOT_CONFIGURED_REPLY =
   '⚠️ Sorry Amma, the grocery agent isn\'t fully set up right now. Please ask Vyshak to check the configuration.';
 
@@ -80,9 +82,10 @@ export class GeminiAgentService {
 
   /**
    * Main agent processing pipeline: Gemini function-calling against the real Swiggy Instamart
-   * MCP tools, in Kannada, Kanglish, or English.
+   * MCP tools, in Kannada, Kanglish, or English - accepts either typed text or a voice note
+   * (Gemini understands audio natively, no separate transcription step needed).
    */
-  public async processMessage(sessionId: string, userMessage: string): Promise<AgentResponse> {
+  public async processMessage(sessionId: string, input: UserInput): Promise<AgentResponse> {
     const history = this.getHistory(sessionId);
     const toolLogs: ToolCallLog[] = [];
 
@@ -97,13 +100,18 @@ export class GeminiAgentService {
         tools: [{ functionDeclarations: await getSwiggyFunctionDeclarations() }]
       });
 
+      const userPart: Part =
+        input.type === 'audio'
+          ? { inlineData: { mimeType: input.mimeType, data: input.data.toString('base64') } }
+          : { text: input.text };
+
       // NOTE: ChatSession.sendMessage() is unusable for tool-result turns - the SDK
       // (@google/generative-ai) hardcodes role:"function" for any functionResponse part
       // (see assignRoleToPartsAndValidateSendMessageRequest in its dist bundle), and the
       // live Gemini API now rejects that role entirely. We manage the turn contents
       // ourselves via generateContent() so function results can be sent as role:"user",
       // which is what the API actually accepts.
-      const turnContents: Content[] = [...history, { role: 'user', parts: [{ text: userMessage }] }];
+      const turnContents: Content[] = [...history, { role: 'user', parts: [userPart] }];
 
       let currentResponse = await this.generateContentWithRetry(model, turnContents);
 
@@ -152,9 +160,11 @@ export class GeminiAgentService {
 
       const finalReplyText = currentResponse.response.text();
 
+      // Persist a text placeholder for audio turns rather than the raw audio bytes - keeps
+      // every later call in this session from re-sending the same audio as input tokens.
       history.push({
         role: 'user',
-        parts: [{ text: userMessage }]
+        parts: [{ text: input.type === 'audio' ? '[voice message]' : input.text }]
       });
       history.push({
         role: 'model',

@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { geminiAgentService } from '../agent/gemini';
+import { geminiAgentService, UserInput } from '../agent/gemini';
 import { whatsAppCloudApiService, WhatsAppButton } from './cloud_api';
 
 // Payment method buttons - the only place in the flow that uses interactive buttons.
@@ -66,6 +66,7 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
       whatsAppCloudApiService.markMessageAsRead(messageId).catch(() => {});
 
       let incomingText = '';
+      let input: UserInput | null = null;
 
       // 1. Text message
       if (messageType === 'text') {
@@ -88,11 +89,26 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
       else if (messageType === 'button') {
         incomingText = messageObj.button?.text || messageObj.button?.payload || '';
       }
+      // 4. Voice note - Gemini understands audio natively, no separate transcription needed
+      else if (messageType === 'audio') {
+        const mediaId = messageObj.audio?.id;
+        if (mediaId) {
+          console.log(`\n📱 [Incoming voice note from +${fromNumber}]`);
+          const { data, mimeType } = await whatsAppCloudApiService.downloadMedia(mediaId);
+          input = { type: 'audio', data, mimeType };
+        }
+      }
 
       if (incomingText.trim()) {
-        console.log(`\n📱 [Incoming WhatsApp from +${fromNumber}]: "${incomingText}"`);
+        input = { type: 'text', text: incomingText };
+      }
 
-        const agentResponse = await geminiAgentService.processMessage(fromNumber, incomingText);
+      if (input) {
+        if (input.type === 'text') {
+          console.log(`\n📱 [Incoming WhatsApp from +${fromNumber}]: "${input.text}"`);
+        }
+
+        const agentResponse = await geminiAgentService.processMessage(fromNumber, input);
 
         console.log(`🤖 [Agent Reply for +${fromNumber}]:\n${agentResponse.reply}`);
 

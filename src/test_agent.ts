@@ -25,7 +25,7 @@ async function runConversationalTest() {
     const userMsg = turns[i];
     console.log(`\n💬 [Turn ${i + 1}] Amma: "${userMsg}"`);
 
-    const response = await geminiAgentService.processMessage(sessionId, userMsg);
+    const response = await geminiAgentService.processMessage(sessionId, { type: 'text', text: userMsg });
 
     console.log(`\n🤖 [Turn ${i + 1}] Agent Reply:\n----------------------------------------`);
     console.log(response.reply);

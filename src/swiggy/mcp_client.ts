@@ -2,8 +2,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { swiggyAuthService } from './auth';
 
-const SWIGGY_MCP_URL = 'https://mcp.swiggy.com/im';
-
 export class SwiggySessionExpiredError extends Error {
   constructor() {
     super('Swiggy session has expired or was never linked. Ask Vyshak to tap the relink link.');
@@ -12,18 +10,21 @@ export class SwiggySessionExpiredError extends Error {
 }
 
 /**
- * Thin wrapper around the official Swiggy Instamart MCP server. Opens a fresh connection per
- * call rather than holding a persistent one - this is a low-traffic personal bot, and a fresh
- * connection sidesteps any complexity around a long-lived session outliving a token refresh.
+ * Thin wrapper around a Swiggy MCP server (Instamart or Food - same auth session works for
+ * both, confirmed empirically). Opens a fresh connection per call rather than holding a
+ * persistent one - this is a low-traffic personal bot, and a fresh connection sidesteps any
+ * complexity around a long-lived session outliving a token refresh.
  */
 class SwiggyMcpService {
+  constructor(private readonly baseUrl: string) {}
+
   private async withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
     const token = swiggyAuthService.getAccessToken();
     if (!token) {
       throw new SwiggySessionExpiredError();
     }
 
-    const transport = new StreamableHTTPClientTransport(new URL(SWIGGY_MCP_URL), {
+    const transport = new StreamableHTTPClientTransport(new URL(this.baseUrl), {
       requestInit: { headers: { Authorization: `Bearer ${token}` } }
     });
     const client = new Client({ name: 'swiggy-instamart-whatsapp-bot', version: '1.0.0' }, { capabilities: {} });
@@ -64,4 +65,5 @@ class SwiggyMcpService {
   }
 }
 
-export const swiggyMcpService = new SwiggyMcpService();
+export const swiggyMcpService = new SwiggyMcpService('https://mcp.swiggy.com/im');
+export const swiggyFoodMcpService = new SwiggyMcpService('https://mcp.swiggy.com/food');

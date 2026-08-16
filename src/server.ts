@@ -73,7 +73,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 
     console.log(`💬 User (+${sessionId}): "${message}"`);
 
-    const agentResponse = await geminiAgentService.processMessage(sessionId, message);
+    const agentResponse = await geminiAgentService.processMessage(sessionId, { type: 'text', text: message });
 
     res.json({
       reply: agentResponse.reply,

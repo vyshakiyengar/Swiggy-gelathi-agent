@@ -154,6 +154,26 @@ export class WhatsAppCloudApiService {
   }
 
   /**
+   * Downloads a media attachment (e.g. a voice note) from an incoming WhatsApp message.
+   * Meta's Media API is a two-step fetch: first resolve the media ID to a short-lived signed
+   * URL, then download the actual bytes from that URL (both requests need the same auth).
+   */
+  public async downloadMedia(mediaId: string): Promise<{ data: Buffer; mimeType: string }> {
+    const metaRes = await axios.get(`https://graph.facebook.com/${this.apiVersion}/${mediaId}`, {
+      headers: { Authorization: `Bearer ${this.token}` }
+    });
+
+    const { url, mime_type: mimeType } = metaRes.data;
+
+    const fileRes = await axios.get(url, {
+      headers: { Authorization: `Bearer ${this.token}` },
+      responseType: 'arraybuffer'
+    });
+
+    return { data: Buffer.from(fileRes.data), mimeType: mimeType || 'audio/ogg' };
+  }
+
+  /**
    * Mark incoming message as read (blue double-tick)
    */
   public async markMessageAsRead(messageId: string): Promise<void> {
