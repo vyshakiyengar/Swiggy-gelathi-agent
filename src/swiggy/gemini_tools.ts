@@ -53,6 +53,40 @@ const EXPOSED_FOOD_TOOLS = [
  */
 const SHARED_TOOLS = ['get_payment_options', 'check_payment_status', 'confirm_order'];
 
+const ORDER_PLACING_TOOLS = ['checkout', 'place_food_order'];
+const VALID_PAYMENT_METHODS = ['Cash', 'COD', 'UPI', 'SwiggyPay'];
+
+/**
+ * Deterministic, code-level guard against placing an order without genuine confirmation - the
+ * prompt says "never call checkout without confirmation" too, but that's a probabilistic
+ * instruction an LLM can fail to follow, and this moves real money. Two independent checks, both
+ * of which real Swiggy behavior makes necessary:
+ *
+ * 1. paymentMethod must be explicitly present and valid. Swiggy's own checkout/place_food_order
+ *    schemas document paymentMethod as optional and "auto-defaults to the user's available
+ *    method if omitted" - meaning an order-placing call with no payment method doesn't error,
+ *    it silently succeeds using whatever Swiggy picks (observed in practice: Cash on Delivery).
+ * 2. get_payment_options must have been shown in a PRIOR, already-completed conversation turn -
+ *    not merely earlier in the same tool-calling loop. This forces a real round-trip (the bot
+ *    shows real payment buttons, a genuinely new incoming WhatsApp message must arrive) before
+ *    an order can be placed, even if a single message tries to bundle "add items and confirm and
+ *    pay by cash" all at once.
+ *
+ * See beginSwiggyToolTurn(), called once per processMessage() invocation in gemini.ts.
+ */
+const paymentOptionsShownLastTurn: Set<string> = new Set();
+const paymentOptionsShownThisTurn: Set<string> = new Set();
+
+/** Call once at the start of every processMessage() turn, before any tool calls happen. */
+export function beginSwiggyToolTurn(sessionId: string): void {
+  if (paymentOptionsShownThisTurn.has(sessionId)) {
+    paymentOptionsShownLastTurn.add(sessionId);
+  } else {
+    paymentOptionsShownLastTurn.delete(sessionId);
+  }
+  paymentOptionsShownThisTurn.delete(sessionId);
+}
+
 /**
  * Params auto-filled server-side per tool, stripped from what the model sees. Covers the fixed
  * delivery address, and lat/lng where a tool needs them but has no real way to source them:
@@ -169,7 +203,7 @@ export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclarati
  * despite the prompt explicitly saying not to), and since real tool names here are real, live
  * actions against a real account, that can't be trusted through on good faith alone.
  */
-export async function executeSwiggyTool(toolName: string, args: Record<string, any>): Promise<any> {
+export async function executeSwiggyTool(sessionId: string, toolName: string, args: Record<string, any>): Promise<any> {
   const isFoodTool = EXPOSED_FOOD_TOOLS.includes(toolName);
   const isKnownTool = isFoodTool || EXPOSED_TOOLS.includes(toolName) || SHARED_TOOLS.includes(toolName);
 
@@ -178,8 +212,39 @@ export async function executeSwiggyTool(toolName: string, args: Record<string, a
     return { success: false, error: `Tool "${toolName}" is not available.` };
   }
 
+  if (ORDER_PLACING_TOOLS.includes(toolName)) {
+    const paymentMethod = args.paymentMethod;
+    if (!paymentMethod || !VALID_PAYMENT_METHODS.includes(paymentMethod)) {
+      console.warn(`⚠️ Refused ${toolName} for session ${sessionId}: no explicit valid paymentMethod (got ${JSON.stringify(paymentMethod)}).`);
+      return {
+        success: false,
+        error:
+          'Cannot place the order: no specific payment method was confirmed. Call get_payment_options, show her the real choices, and wait for her to explicitly pick one before calling this again with that exact paymentMethod.'
+      };
+    }
+    if (!paymentOptionsShownLastTurn.has(sessionId)) {
+      console.warn(`⚠️ Refused ${toolName} for session ${sessionId}: get_payment_options was not shown in a prior completed turn.`);
+      return {
+        success: false,
+        error:
+          'Cannot place the order yet: payment options have not been shown to her in a previous message. Call get_payment_options now, send her the bill and real payment choices, and wait for her actual next reply - do not call this again in the same turn.'
+      };
+    }
+  }
+
   const injectedParams = AUTO_INJECTED_PARAMS_BY_TOOL[toolName];
   const finalArgs = injectedParams ? { ...args, ...injectedParams() } : args;
   const service = isFoodTool ? swiggyFoodMcpService : swiggyMcpService;
-  return service.callTool(toolName, finalArgs);
+  const result = await service.callTool(toolName, finalArgs);
+
+  if (toolName === 'get_payment_options' && result?.success !== false) {
+    paymentOptionsShownThisTurn.add(sessionId);
+  }
+  if (ORDER_PLACING_TOOLS.includes(toolName) && result?.success !== false) {
+    // Order placed - a new order later must go through a fresh payment-options round trip.
+    paymentOptionsShownLastTurn.delete(sessionId);
+    paymentOptionsShownThisTurn.delete(sessionId);
+  }
+
+  return result;
 }

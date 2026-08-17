@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI, Content, Part } from '@google/generative-ai';
 import { AGENT_SYSTEM_PROMPT } from './prompts';
-import { getSwiggyFunctionDeclarations, executeSwiggyTool } from '../swiggy/gemini_tools';
+import { getSwiggyFunctionDeclarations, executeSwiggyTool, beginSwiggyToolTurn } from '../swiggy/gemini_tools';
 import { SwiggySessionExpiredError } from '../swiggy/mcp_client';
 import dotenv from 'dotenv';
 
@@ -21,10 +21,10 @@ export interface AgentResponse {
 export type UserInput = { type: 'text'; text: string } | { type: 'audio'; data: Buffer; mimeType: string };
 
 const NOT_CONFIGURED_REPLY =
-  '⚠️ Sorry Amma, the grocery agent isn\'t fully set up right now. Please ask Vyshak to check the configuration.';
+  '⚠️ Sorry Sudha Akka, the grocery agent isn\'t fully set up right now. Please ask Vyshak to check the configuration.';
 
 const UNAVAILABLE_REPLY =
-  '⚠️ Sorry Amma, I\'m having trouble understanding right now. Please try again in a moment, or ask Vyshak to check.';
+  '⚠️ Sorry Sudha Akka, I\'m having trouble understanding right now. Please try again in a moment, or ask Vyshak to check.';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,6 +93,9 @@ export class GeminiAgentService {
       return { reply: NOT_CONFIGURED_REPLY, toolCallsExecuted: [] };
     }
 
+    // Must happen before any tool calls this turn - see gemini_tools.ts's checkout safety gate.
+    beginSwiggyToolTurn(sessionId);
+
     try {
       const model = this.genAI.getGenerativeModel({
         model: this.primaryModelName,
@@ -137,7 +140,7 @@ export class GeminiAgentService {
           const toolName = call.name;
           const args = call.args as Record<string, any>;
 
-          const result = await executeSwiggyTool(toolName, args);
+          const result = await executeSwiggyTool(sessionId, toolName, args);
 
           toolLogs.push({
             toolName,
@@ -179,14 +182,14 @@ export class GeminiAgentService {
       if (error instanceof SwiggySessionExpiredError) {
         console.warn('⚠️ Swiggy session expired mid-conversation.');
         return {
-          reply: '⚠️ Sorry Amma, the grocery ordering session has expired. Please ask Vyshak to relink it (he gets a WhatsApp reminder automatically) and try again in a bit.',
+          reply: '⚠️ Sorry Sudha Akka, the grocery ordering session has expired. Please ask Vyshak to relink it (he gets a WhatsApp reminder automatically) and try again in a bit.',
           toolCallsExecuted: toolLogs
         };
       }
       if (isRateLimitError(error)) {
         console.error('❌ Gemini rate limit exhausted retries:', error.message);
         return {
-          reply: '⚠️ Sorry Amma, I\'m a bit overloaded right now (too many requests). Please wait a minute and try again.',
+          reply: '⚠️ Sorry Sudha Akka, I\'m a bit overloaded right now (too many requests). Please wait a minute and try again.',
           toolCallsExecuted: toolLogs
         };
       }
