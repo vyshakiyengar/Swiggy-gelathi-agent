@@ -175,6 +175,20 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
           }
         }
 
+        // UPI order-placing calls come back PENDING_PAYMENT with a real payment link
+        // (result.bridgeUrl, from mcp_client.ts's structuredContent fallback) - sent here as its
+        // own message instead of trusting the model to retype a ~300-character URL verbatim.
+        // WhatsApp auto-linkifies plain https:// text, so this is tappable as-is.
+        const orderPlacingCall = agentResponse.toolCallsExecuted.find(
+          (t) => (t.toolName === 'checkout' || t.toolName === 'place_food_order') && t.result?.success !== false
+        );
+        if (orderPlacingCall?.result?.status === 'PENDING_PAYMENT' && orderPlacingCall.result?.bridgeUrl) {
+          await whatsAppCloudApiService.sendTextMessage(
+            fromNumber,
+            `💳 Tap to complete payment: ${orderPlacingCall.result.bridgeUrl}`
+          );
+        }
+
         // Bonus spoken reply for voice-triggered turns - best-effort, never blocks/replaces
         // the text reply already sent above.
         if (wasVoiceNote) {
