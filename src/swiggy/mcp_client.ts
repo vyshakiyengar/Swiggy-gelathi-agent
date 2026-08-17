@@ -41,7 +41,16 @@ class SwiggyMcpService {
     return this.withClient((client) => client.listTools());
   }
 
-  /** Calls a Swiggy MCP tool and returns its parsed JSON payload (all this server's tools return a single text content block of JSON). */
+  /**
+   * Calls a Swiggy MCP tool and returns its parsed JSON payload. Most tools return a single text
+   * content block of JSON, but some (confirmed on get_payment_options via the Food server) return
+   * TWO text blocks - a human-readable summary first, then the real structured JSON second
+   * (presumably meant to pair with a rich UI widget on official clients, which we don't render).
+   * Taking content[0] unconditionally silently fed the model a plain-text blob instead of the
+   * real data on those tools - it read the summary as "success" but had no platforms/cod/
+   * allMethods fields to work with, and reasonably concluded no payment options existed. Now
+   * tries every text block and uses the first one that actually parses as JSON.
+   */
   public async callTool(name: string, args: Record<string, any>): Promise<any> {
     const result = await this.withClient((client) => client.callTool({ name, arguments: args }));
 
@@ -50,14 +59,19 @@ class SwiggyMcpService {
       return { success: false, error: message };
     }
 
-    const textBlock = (result.content as any[])?.find((c) => c.type === 'text');
-    if (!textBlock) return { success: true, data: result.content };
+    const textBlocks = ((result.content as any[]) || []).filter((c) => c.type === 'text');
+    if (textBlocks.length === 0) return { success: true, data: result.content };
 
-    try {
-      return JSON.parse(textBlock.text);
-    } catch {
-      return { success: true, data: textBlock.text };
+    for (const block of textBlocks) {
+      try {
+        return JSON.parse(block.text);
+      } catch {
+        continue;
+      }
     }
+
+    // No block was valid JSON - fall back to the first block as a plain-text summary.
+    return { success: true, data: textBlocks[0].text };
   }
 
   public isConfigured(): boolean {

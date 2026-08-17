@@ -27,9 +27,13 @@ const EXPOSED_TOOLS = [
  * Food delivery tools, via mcp.swiggy.com/food - same account, separate MCP server. Excludes
  * get_food_delivery_status (internal) and report_error, same reasoning as Instamart above.
  * get_addresses, get_payment_options, check_payment_status, and confirm_order exist on BOTH
- * servers under the same names - only fetched once from the Instamart connection below (Gemini
- * requires unique function names; the underlying payment/address service is shared regardless
- * of which MCP surface you call it through, confirmed empirically).
+ * servers under the same names and are declared only once, from the Instamart connection below
+ * (Gemini requires unique function names) - but each domain has its OWN cart, and these tools
+ * operate on whichever cart lives on the server you actually call them through. Calling
+ * get_payment_options against Instamart while the real cart is a Food cart legitimately returns
+ * "no payment options" for Instamart's (empty) cart, not an error - confirmed the hard way after
+ * a real food order came back with no payment options. See sessionDomain below for how execution
+ * routes these to whichever domain is actually in play.
  */
 const EXPOSED_FOOD_TOOLS = [
   'search_restaurants',
@@ -56,6 +60,17 @@ const SHARED_TOOLS = ['get_payment_options', 'check_payment_status', 'confirm_or
 const ORDER_PLACING_TOOLS = ['checkout', 'place_food_order'];
 const VALID_PAYMENT_METHODS = ['Cash', 'COD', 'UPI', 'SwiggyPay'];
 
+type SwiggyDomain = 'food' | 'instamart';
+
+/**
+ * Which domain (grocery vs food) each session most recently touched - updated on every
+ * domain-specific tool call, read whenever a SHARED_TOOLS call needs to know which server's cart
+ * it should actually hit instead of assuming Instamart. Defaults to 'instamart' if a shared tool
+ * is somehow called before any domain tool this session (shouldn't happen - there's always a
+ * cart action first).
+ */
+const sessionDomain: Map<string, SwiggyDomain> = new Map();
+
 /**
  * Deterministic, code-level guard against placing an order without genuine confirmation - the
  * prompt says "never call checkout without confirmation" too, but that's a probabilistic
@@ -74,17 +89,28 @@ const VALID_PAYMENT_METHODS = ['Cash', 'COD', 'UPI', 'SwiggyPay'];
  *
  * See beginSwiggyToolTurn(), called once per processMessage() invocation in gemini.ts.
  */
+// Keyed by `${sessionId}:${domain}`, not just sessionId - a Food payment-options call showing
+// real choices must not satisfy the gate for an Instamart checkout that never itself called
+// get_payment_options against Instamart's cart, and vice versa (see sessionDomain above - the
+// two domains' carts and payment options are independent even though the tool names match).
 const paymentOptionsShownLastTurn: Set<string> = new Set();
 const paymentOptionsShownThisTurn: Set<string> = new Set();
 
+function domainKey(sessionId: string, domain: SwiggyDomain): string {
+  return `${sessionId}:${domain}`;
+}
+
 /** Call once at the start of every processMessage() turn, before any tool calls happen. */
 export function beginSwiggyToolTurn(sessionId: string): void {
-  if (paymentOptionsShownThisTurn.has(sessionId)) {
-    paymentOptionsShownLastTurn.add(sessionId);
-  } else {
-    paymentOptionsShownLastTurn.delete(sessionId);
+  for (const domain of ['food', 'instamart'] as const) {
+    const key = domainKey(sessionId, domain);
+    if (paymentOptionsShownThisTurn.has(key)) {
+      paymentOptionsShownLastTurn.add(key);
+    } else {
+      paymentOptionsShownLastTurn.delete(key);
+    }
+    paymentOptionsShownThisTurn.delete(key);
   }
-  paymentOptionsShownThisTurn.delete(sessionId);
 }
 
 /**
@@ -204,13 +230,26 @@ export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclarati
  * actions against a real account, that can't be trusted through on good faith alone.
  */
 export async function executeSwiggyTool(sessionId: string, toolName: string, args: Record<string, any>): Promise<any> {
-  const isFoodTool = EXPOSED_FOOD_TOOLS.includes(toolName);
-  const isKnownTool = isFoodTool || EXPOSED_TOOLS.includes(toolName) || SHARED_TOOLS.includes(toolName);
+  const isExposedFoodTool = EXPOSED_FOOD_TOOLS.includes(toolName);
+  const isExposedGroceryTool = EXPOSED_TOOLS.includes(toolName);
+  const isSharedTool = SHARED_TOOLS.includes(toolName);
+  const isKnownTool = isExposedFoodTool || isExposedGroceryTool || isSharedTool;
 
   if (!isKnownTool) {
     console.warn(`⚠️ Model attempted to call undeclared tool "${toolName}" - refused.`);
     return { success: false, error: `Tool "${toolName}" is not available.` };
   }
+
+  // Domain-specific tools set the session's active domain; shared tools read it back instead of
+  // assuming Instamart. checkout/place_food_order aren't shared, so their domain is always known
+  // directly from the tool name itself.
+  if (isExposedFoodTool) sessionDomain.set(sessionId, 'food');
+  else if (isExposedGroceryTool) sessionDomain.set(sessionId, 'instamart');
+  const domain: SwiggyDomain = isSharedTool
+    ? sessionDomain.get(sessionId) ?? 'instamart'
+    : isExposedFoodTool
+      ? 'food'
+      : 'instamart';
 
   if (ORDER_PLACING_TOOLS.includes(toolName)) {
     const paymentMethod = args.paymentMethod;
@@ -222,8 +261,8 @@ export async function executeSwiggyTool(sessionId: string, toolName: string, arg
           'Cannot place the order: no specific payment method was confirmed. Call get_payment_options, show her the real choices, and wait for her to explicitly pick one before calling this again with that exact paymentMethod.'
       };
     }
-    if (!paymentOptionsShownLastTurn.has(sessionId)) {
-      console.warn(`⚠️ Refused ${toolName} for session ${sessionId}: get_payment_options was not shown in a prior completed turn.`);
+    if (!paymentOptionsShownLastTurn.has(domainKey(sessionId, domain))) {
+      console.warn(`⚠️ Refused ${toolName} for session ${sessionId}: get_payment_options was not shown for domain "${domain}" in a prior completed turn.`);
       return {
         success: false,
         error:
@@ -234,16 +273,16 @@ export async function executeSwiggyTool(sessionId: string, toolName: string, arg
 
   const injectedParams = AUTO_INJECTED_PARAMS_BY_TOOL[toolName];
   const finalArgs = injectedParams ? { ...args, ...injectedParams() } : args;
-  const service = isFoodTool ? swiggyFoodMcpService : swiggyMcpService;
+  const service = domain === 'food' ? swiggyFoodMcpService : swiggyMcpService;
   const result = await service.callTool(toolName, finalArgs);
 
   if (toolName === 'get_payment_options' && result?.success !== false) {
-    paymentOptionsShownThisTurn.add(sessionId);
+    paymentOptionsShownThisTurn.add(domainKey(sessionId, domain));
   }
   if (ORDER_PLACING_TOOLS.includes(toolName) && result?.success !== false) {
     // Order placed - a new order later must go through a fresh payment-options round trip.
-    paymentOptionsShownLastTurn.delete(sessionId);
-    paymentOptionsShownThisTurn.delete(sessionId);
+    paymentOptionsShownLastTurn.delete(domainKey(sessionId, domain));
+    paymentOptionsShownThisTurn.delete(domainKey(sessionId, domain));
   }
 
   return result;

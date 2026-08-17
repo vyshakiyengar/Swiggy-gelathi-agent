@@ -6,20 +6,50 @@ import { whatsAppCloudApiService, WhatsAppButton } from './cloud_api';
 import { transcribeWithGnani } from '../gnani/stt';
 import { sendKannadaVoiceReply } from '../gnani/tts';
 
-// Payment method buttons - the only place in the flow that uses interactive buttons.
-// Mapped to unambiguous instruction text rather than trusting the model to recall the exact
-// intentApp id from a button title alone, since this step moves real money.
-const PAYMENT_METHOD_BUTTONS: WhatsAppButton[] = [
-  { id: 'pay_cod', title: '💵 Cash on Delivery' },
-  { id: 'pay_gpay', title: '📱 Google Pay' },
-  { id: 'pay_phonepe', title: '📱 PhonePe' }
+// Payment method buttons - the only place in the flow that uses interactive buttons. Mapped to
+// unambiguous instruction text rather than trusting the model to recall the exact intentApp id
+// from a button title alone, since this step moves real money. This full mapping is static and
+// stateless (covers every UPI app Swiggy is known to offer) even though which of these actually
+// get SHOWN as buttons is decided per-message from the real get_payment_options response (see
+// buildPaymentButtons) - a cart with no Google Pay available, for example, must not show a
+// Google Pay button just because that's the usual default.
+const KNOWN_UPI_METHODS: { intentAppId: string; buttonId: string; title: string; label: string }[] = [
+  { intentAppId: 'gpay://upi/', buttonId: 'pay_gpay', title: '📱 Google Pay', label: 'Google Pay' },
+  { intentAppId: 'phonepe://', buttonId: 'pay_phonepe', title: '📱 PhonePe', label: 'PhonePe' },
+  { intentAppId: 'paytmmp://', buttonId: 'pay_paytm', title: '📱 Paytm', label: 'Paytm' },
+  { intentAppId: 'bhim://upi/', buttonId: 'pay_bhim', title: '📱 BHIM', label: 'BHIM' },
+  { intentAppId: 'credpay://upi/', buttonId: 'pay_cred', title: '📱 CRED', label: 'CRED' },
+  { intentAppId: 'super://', buttonId: 'pay_supermoney', title: '📱 super.money', label: 'super.money' }
 ];
 
 const PAYMENT_BUTTON_ID_TO_INSTRUCTION: Record<string, string> = {
   pay_cod: 'Pay by Cash on Delivery',
-  pay_gpay: 'Pay by UPI using Google Pay',
-  pay_phonepe: 'Pay by UPI using PhonePe'
+  ...Object.fromEntries(KNOWN_UPI_METHODS.map((m) => [m.buttonId, `Pay by UPI using ${m.label}`]))
 };
+
+/**
+ * Builds up to 3 payment buttons (Meta's cap) reflecting what's genuinely available for THIS
+ * cart, from the real get_payment_options tool result - not an assumed fixed set. Prefers Cash
+ * on Delivery + Google Pay + PhonePe when present (the common case), then fills any remaining
+ * slots with whatever other UPI apps are actually offered.
+ */
+function buildPaymentButtons(paymentOptionsResult: any): WhatsAppButton[] {
+  const data = paymentOptionsResult?.data ?? paymentOptionsResult ?? {};
+  const availableIntentIds = new Set<string>((data.platforms?.mobile?.methods || []).map((m: any) => m.id));
+  const codAvailable = data.cod?.available === true;
+
+  const buttons: WhatsAppButton[] = [];
+  if (codAvailable) buttons.push({ id: 'pay_cod', title: '💵 Cash on Delivery' });
+
+  for (const method of KNOWN_UPI_METHODS) {
+    if (buttons.length >= 3) break;
+    if (availableIntentIds.has(method.intentAppId)) {
+      buttons.push({ id: method.buttonId, title: method.title });
+    }
+  }
+
+  return buttons;
+}
 
 /**
  * Handles Meta WhatsApp Cloud API Webhook Verification (GET)
@@ -129,15 +159,20 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
 
         await whatsAppCloudApiService.sendTextMessage(fromNumber, agentResponse.reply);
 
-        const showedPaymentOptions = agentResponse.toolCallsExecuted.some(
+        const paymentOptionsCall = agentResponse.toolCallsExecuted.find(
           (t) => t.toolName === 'get_payment_options' && t.result?.success !== false
         );
-        if (showedPaymentOptions) {
-          await whatsAppCloudApiService.sendInteractiveButtons(
-            fromNumber,
-            'Tap to choose how you\'d like to pay:',
-            PAYMENT_METHOD_BUTTONS
-          );
+        if (paymentOptionsCall) {
+          const paymentButtons = buildPaymentButtons(paymentOptionsCall.result);
+          if (paymentButtons.length > 0) {
+            await whatsAppCloudApiService.sendInteractiveButtons(
+              fromNumber,
+              'Tap to choose how you\'d like to pay:',
+              paymentButtons
+            );
+          } else {
+            console.warn(`⚠️ get_payment_options succeeded but no COD/UPI methods were actually available for +${fromNumber} - no buttons sent.`);
+          }
         }
 
         // Bonus spoken reply for voice-triggered turns - best-effort, never blocks/replaces
