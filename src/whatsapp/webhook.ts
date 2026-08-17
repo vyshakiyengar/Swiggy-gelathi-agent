@@ -1,6 +1,10 @@
 import { Request, Response } from 'express';
 import { geminiAgentService, UserInput } from '../agent/gemini';
 import { whatsAppCloudApiService, WhatsAppButton } from './cloud_api';
+// --- Gnani trial integration (voice notes) - see src/gnani/ and README's "Removing Gnani"
+// section for the one-command revert if the trial credits run out or it's turned off.
+import { transcribeWithGnani } from '../gnani/stt';
+import { sendKannadaVoiceReply } from '../gnani/tts';
 
 // Payment method buttons - the only place in the flow that uses interactive buttons.
 // Mapped to unambiguous instruction text rather than trusting the model to recall the exact
@@ -67,6 +71,7 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
 
       let incomingText = '';
       let input: UserInput | null = null;
+      let wasVoiceNote = false;
 
       // 1. Text message
       if (messageType === 'text') {
@@ -89,13 +94,23 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
       else if (messageType === 'button') {
         incomingText = messageObj.button?.text || messageObj.button?.payload || '';
       }
-      // 4. Voice note - Gemini understands audio natively, no separate transcription needed
+      // 4. Voice note - try Gnani STT first (fast, ~2.5s budget), fall back to Gemini's
+      // native audio understanding if it's unavailable/slow/errors. Either way, this counts
+      // as a voice-triggered turn, which also gets a spoken Kannada reply back (see below).
       else if (messageType === 'audio') {
         const mediaId = messageObj.audio?.id;
         if (mediaId) {
           console.log(`\n📱 [Incoming voice note from +${fromNumber}]`);
+          wasVoiceNote = true;
           const { data, mimeType } = await whatsAppCloudApiService.downloadMedia(mediaId);
-          input = { type: 'audio', data, mimeType };
+
+          const gnaniTranscript = await transcribeWithGnani(data, mimeType);
+          if (gnaniTranscript) {
+            console.log(`🎙️ [Gnani transcript]: "${gnaniTranscript}"`);
+            input = { type: 'text', text: gnaniTranscript };
+          } else {
+            input = { type: 'audio', data, mimeType };
+          }
         }
       }
 
@@ -123,6 +138,16 @@ export const handleWhatsAppIncomingMessage = async (req: Request, res: Response)
             'Tap to choose how you\'d like to pay:',
             PAYMENT_METHOD_BUTTONS
           );
+        }
+
+        // Bonus spoken reply for voice-triggered turns - best-effort, never blocks/replaces
+        // the text reply already sent above.
+        if (wasVoiceNote) {
+          try {
+            await sendKannadaVoiceReply(fromNumber, agentResponse.reply);
+          } catch (err: any) {
+            console.warn('⚠️ Gnani voice reply failed (non-fatal, text reply already sent):', err.message);
+          }
         }
       }
     }

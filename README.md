@@ -1,22 +1,26 @@
-# 🛒 Swiggy Instamart WhatsApp Agent for Mom (Amma Sahayaka)
+# 🛒 Swiggy WhatsApp Agent for Sudha Akka
 
-An autonomous, multi-turn AI grocery ordering assistant designed for Indian households to order groceries via WhatsApp in **Kannada, Kanglish, and English**. Powered by **Google Gemini AI**, **Meta WhatsApp Business Cloud API**, and Swiggy's official **Instamart MCP server**.
+An autonomous, multi-turn AI grocery and food ordering assistant, built for Sudha Akka to order via WhatsApp in **Kannada, Kanglish, and English** - by voice note or text. Powered by **Google Gemini AI**, **Meta WhatsApp Business Cloud API**, and Swiggy's official **Instamart and Food MCP servers**.
 
 ---
 
 ## 🌟 Key Features
 
-- 🗣️ **Trilingual Natural Language Understanding**: Speaks and understands native Kannada script, Kanglish (Kannada in English alphabet), and English.
-- 🛵 **Real Swiggy Instamart Integration**: Talks directly to Swiggy's official Instamart MCP server (`mcp.swiggy.com/im`) - real product search, real cart, real orders on a real account. No sandbox.
-- 📱 **Official Meta WhatsApp Cloud API**: Text messaging, read receipts, and webhook-based conversation handling.
+- 🗣️ **Trilingual Natural Language Understanding**: Speaks and understands native Kannada script, Kanglish (Kannada in English alphabet), and English. Every reply comes back in both Kanglish and pure Kannada script.
+- 🎙️ **Voice notes**: Send a voice note instead of typing - understood natively by Gemini, with an optional faster/more-accurate Kannada path via Gnani (trial, easily removable - see below). Replies to voice notes get a spoken Kannada voice note back too, alongside the usual text.
+- 🛵 **Real Swiggy Integration**: Talks directly to Swiggy's official MCP servers for both Instamart (`mcp.swiggy.com/im`) and Food delivery (`mcp.swiggy.com/food`) - real product/restaurant search, real cart, real orders on a real account. No sandbox (Food orders are capped at ₹1000 while Swiggy's Food MCP is in beta).
+- 💳 **Payment buttons**: Tap-to-choose Cash on Delivery / Google Pay / PhonePe buttons at the payment step.
+- 📱 **Official Meta WhatsApp Cloud API**: Text and voice messaging, read receipts, and webhook-based conversation handling.
 - 🔐 **Self-service session renewal**: Swiggy's auth doesn't issue refresh tokens, so a cron checks session validity and WhatsApps a relink link when it's about to expire - one tap from a phone, no laptop or code required.
 - ☁️ **24/7 Cloud Architecture**: Dockerized production deployment on Render.
 
 ---
 
-## 🛠️ Swiggy Instamart MCP Tools Used
+## 🛠️ Swiggy MCP Tools Used
 
-The agent calls Swiggy's real MCP tools directly (schemas are fetched live from their server, not hand-transcribed - see `src/swiggy/gemini_tools.ts`). The delivery address is fixed to one saved household address and injected automatically; the agent never asks which address to use.
+The agent calls Swiggy's real MCP tools directly on both servers (schemas fetched live, not hand-transcribed - see `src/swiggy/gemini_tools.ts`). The delivery address is fixed to one saved household address and injected automatically; the agent never asks which address to use.
+
+**Instamart (groceries), `mcp.swiggy.com/im`:**
 
 | Tool Name | Description |
 | :--- | :--- |
@@ -26,11 +30,21 @@ The agent calls Swiggy's real MCP tools directly (schemas are fetched live from 
 | `update_cart` | Replaces the entire cart with the given items (not incremental - see agent system prompt) |
 | `clear_cart` | Empty the cart |
 | `checkout` | Place the order - **real order, real charge**, requires explicit user confirmation |
-| `confirm_order` | Finalizes a pending order after payment |
-| `get_payment_options` / `check_payment_status` | UPI payment flow |
 | `get_orders` / `track_order` | Order history and live tracking |
 
-`get_addresses`, `get_delivery_status`, and `report_error` are intentionally not exposed to the conversational agent (address is fixed; the other two aren't relevant to a WhatsApp bot).
+**Food delivery, `mcp.swiggy.com/food`:**
+
+| Tool Name | Description |
+| :--- | :--- |
+| `search_restaurants` / `search_menu` / `get_restaurant_menu` | Restaurant and dish discovery |
+| `get_food_cart` / `update_food_cart` / `flush_food_cart` | Cart (additive, unlike Instamart's - always call `get_food_cart` after updating to see the result) |
+| `place_food_order` | Place the order - **real order, real charge**, capped at ₹1000 while the Food MCP is in beta |
+| `fetch_food_coupons` / `apply_food_coupon` | Coupons |
+| `get_food_orders` / `get_food_order_details` / `track_food_order` | Order history and live tracking |
+
+**Shared across both** (fetched once via the Instamart connection, since Gemini requires unique function names): `get_payment_options`, `check_payment_status`, `confirm_order`.
+
+`get_addresses`, `get_delivery_status`/`get_food_delivery_status`, and `report_error` are intentionally not exposed to the conversational agent (address is fixed; the others aren't relevant to a WhatsApp bot). `executeSwiggyTool` enforces this as a real allowlist, not just a declaration-time filter - Gemini has occasionally tried calling `get_addresses` despite never being told about it (a known LLM failure mode), and that attempt is refused rather than silently executed against the real account.
 
 ---
 
@@ -38,13 +52,16 @@ The agent calls Swiggy's real MCP tools directly (schemas are fetched live from 
 
 ```mermaid
 flowchart LR
-    User[Mom on WhatsApp] <-->|Meta Cloud API| Webhook[Express Webhook Engine]
+    User[Sudha Akka on WhatsApp] <-->|Meta Cloud API| Webhook[Express Webhook Engine]
+    Webhook -.->|voice note| Gnani[Gnani STT/TTS - optional]
     Webhook <--> Gemini[Gemini LLM Agent]
-    Gemini <--> MCP[Swiggy Instamart MCP]
-    MCP <--> SwiggyAPI[Real Swiggy Account]
+    Gemini <--> MCPim[Swiggy Instamart MCP]
+    Gemini <--> MCPfood[Swiggy Food MCP]
+    MCPim <--> SwiggyAPI[Real Swiggy Account]
+    MCPfood <--> SwiggyAPI
     Cron[Relink Reminder Cron] -->|WhatsApp| User
     User -->|taps relink link| OAuthCallback[/swiggy/oauth/callback]
-    OAuthCallback --> MCP
+    OAuthCallback --> MCPim
 ```
 
 ---
@@ -80,8 +97,20 @@ SWIGGY_ACCESS_TOKEN=          # obtained via the linking flow above
 SWIGGY_DEFAULT_ADDRESS_ID=    # Swiggy's ID for the one saved delivery address
 SWIGGY_RELOGIN_REMINDER_NUMBERS=919876543210,919876543211
 
-DEFAULT_USER_NAME="Amma"
+GNANI_API_KEY=                 # optional, trial - see "Removing Gnani" below
 ```
+
+---
+
+## 🎙️ Gnani voice notes (trial - built to be removed in one command)
+
+Voice notes work with just Gemini (native audio understanding) and no Gnani key at all - Gnani is a layered-on trial for faster/more-accurate Kannada transcription plus a spoken Kannada voice-note reply. It's on limited trial credit and may be turned off.
+
+**How it's isolated:** all Gnani-specific code lives in `src/gnani/` (`stt.ts`, `tts.ts`) and nowhere else. The only integration points are a few clearly-commented lines in `src/whatsapp/webhook.ts` (search for "Gnani trial integration"). `src/gnani/stt.ts` fails soft to `null` on any error/timeout (2.5s budget), which `webhook.ts` treats as "fall back to Gemini's native audio path." `src/gnani/tts.ts` is pure best-effort - it runs *after* the text reply is already sent, and if translation, synthesis, or sending fails, it's skipped silently. Nothing about the core text/grocery/food flow depends on Gnani at all.
+
+**Removing Gnani, two ways:**
+1. **Instant, no redeploy**: delete the `GNANI_API_KEY` env var on Render. Every Gnani call checks for this first and no-ops immediately if it's missing - voice notes keep working via Gemini's native understanding, just without the spoken reply.
+2. **Remove the code entirely**: find the commit that introduced `src/gnani/` (`git log --oneline -- src/gnani/`), then `git revert <that-sha>` and push. Because it landed as one self-contained commit, the revert cleanly removes `src/gnani/`, the `webhook.ts` integration lines, and the `uploadMedia`/`sendAudioMessage` additions to `cloud_api.ts`, with nothing else touched.
 
 ---
 

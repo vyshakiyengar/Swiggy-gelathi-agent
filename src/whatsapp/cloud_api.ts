@@ -174,6 +174,55 @@ export class WhatsAppCloudApiService {
   }
 
   /**
+   * Uploads media bytes to Meta so they can be sent in a message (Meta requires media to be
+   * uploaded first and referenced by ID, rather than sent inline). Returns the media ID.
+   */
+  public async uploadMedia(data: Buffer, mimeType: string, filename: string): Promise<string> {
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('file', new Blob([new Uint8Array(data)], { type: mimeType }), filename);
+
+    const res = await fetch(`https://graph.facebook.com/${this.apiVersion}/${this.phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.token}` },
+      body: form
+    });
+
+    const body: any = await res.json();
+    if (!res.ok || !body.id) {
+      throw new Error(`Media upload failed: ${JSON.stringify(body)}`);
+    }
+    return body.id;
+  }
+
+  /**
+   * Send a voice note / audio message by previously-uploaded media ID.
+   */
+  public async sendAudioMessage(to: string, mediaId: string): Promise<any> {
+    const cleanTo = to.replace(/\D/g, '');
+
+    if (!this.isConfigured) {
+      console.log(`\n📤 [Meta Audio Simulation -> +${cleanTo}]: media_id=${mediaId}\n`);
+      return { simulated: true, to: cleanTo, mediaId };
+    }
+
+    const response = await axios.post(
+      this.getApiUrl(),
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: cleanTo,
+        type: 'audio',
+        audio: { id: mediaId }
+      },
+      { headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' } }
+    );
+
+    console.log(`✅ [Meta WhatsApp Cloud API] Voice note sent to +${cleanTo}`);
+    return response.data;
+  }
+
+  /**
    * Mark incoming message as read (blue double-tick)
    */
   public async markMessageAsRead(messageId: string): Promise<void> {
