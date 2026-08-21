@@ -72,7 +72,10 @@ class SwiggyAuthService {
   }
 
   /** Exchanges an authorization code (from the OAuth callback) for an access token. */
-  public async handleCallback(code: string, state: string): Promise<{ success: boolean; error?: string }> {
+  public async handleCallback(
+    code: string,
+    state: string
+  ): Promise<{ success: boolean; error?: string; accessToken?: string; issuedAt?: number }> {
     const entry = this.pendingVerifiers.get(state);
     if (!entry) {
       return { success: false, error: 'Unknown or expired login attempt (state mismatch). Please request a new login link.' };
@@ -98,12 +101,16 @@ class SwiggyAuthService {
     }
 
     const body = await res.json();
+    const issuedAt = Date.now();
     this.tokenState = {
       accessToken: body.access_token,
-      expiresAt: Date.now() + (body.expires_in || 5 * 24 * 60 * 60) * 1000
+      expiresAt: issuedAt + (body.expires_in || 5 * 24 * 60 * 60) * 1000
     };
     console.log(`✅ Swiggy session refreshed via relogin link, valid until ${new Date(this.tokenState.expiresAt).toISOString()}`);
-    return { success: true };
+    // Returned (not just stored in memory) so the callback route can surface it for copying into
+    // Render's env vars - this in-memory session alone won't survive the next Render restart
+    // (free-tier idle sleep, any deploy), which is exactly the gap that caused today's outage.
+    return { success: true, accessToken: body.access_token, issuedAt };
   }
 
   public getAccessToken(): string | null {

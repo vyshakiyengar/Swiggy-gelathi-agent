@@ -46,7 +46,18 @@ app.get('/swiggy/oauth/callback', async (req: Request, res: Response) => {
     return res.status(400).send(`<h2>Swiggy login failed</h2><p>${result.error}</p><p>Ask Vyshak for a fresh link.</p>`);
   }
 
-  res.send('<h2>✅ Swiggy linked successfully!</h2><p>You can close this tab. The grocery bot is ready again.</p>');
+  // The bot works again immediately (in-memory), but Render restarts this process periodically
+  // (free-tier idle sleep, every deploy) which wipes in-memory-only state - so the fresh values
+  // are shown here too, for Vyshak to paste into Render's env vars if he wants this login to
+  // survive restarts instead of needing to be redone on the next one.
+  res.send(`
+    <h2>✅ Swiggy linked successfully!</h2>
+    <p>The grocery bot is ready again right away - Sudha can close this tab.</p>
+    <hr>
+    <p><b>For Vyshak only</b> - Render restarts this service periodically (free-tier idle sleep, any deploy), which wipes this login since it only lives in memory. To make it last the full ~5 days instead of breaking again at the next restart, update these two Render environment variables and redeploy, then close this tab:</p>
+    <p><code>SWIGGY_ACCESS_TOKEN</code> = <code>${result.accessToken}</code></p>
+    <p><code>SWIGGY_TOKEN_ISSUED_AT</code> = <code>${result.issuedAt}</code></p>
+  `);
 });
 
 /** Manual trigger to get a fresh login link without waiting for the cron reminder. */
