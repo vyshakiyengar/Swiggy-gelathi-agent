@@ -97,10 +97,23 @@ export class GeminiAgentService {
     beginSwiggyToolTurn(sessionId);
 
     try {
+      let functionDeclarations;
+      try {
+        functionDeclarations = await getSwiggyFunctionDeclarations();
+      } catch (declError: any) {
+        // This step only ever talks to Swiggy's MCP servers, so a failure here is
+        // overwhelmingly an expired/invalid session, not a Gemini problem - but it was falling
+        // through to the generic UNAVAILABLE_REPLY below with zero tool calls logged, giving
+        // nobody (not her, not the logs) any hint that a relink was the actual fix. Route it
+        // through the existing, more actionable SwiggySessionExpiredError handling instead.
+        console.error('❌ Failed to fetch Swiggy tool declarations (treating as an expired/invalid session):', declError.message);
+        throw new SwiggySessionExpiredError();
+      }
+
       const model = this.genAI.getGenerativeModel({
         model: this.primaryModelName,
         systemInstruction: AGENT_SYSTEM_PROMPT,
-        tools: [{ functionDeclarations: await getSwiggyFunctionDeclarations() }]
+        tools: [{ functionDeclarations }]
       });
 
       const userPart: Part =

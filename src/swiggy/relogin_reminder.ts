@@ -1,4 +1,5 @@
 import { swiggyAuthService } from './auth';
+import { swiggyMcpService } from './mcp_client';
 import { whatsAppCloudApiService } from '../whatsapp/cloud_api';
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // check every 6 hours
@@ -14,7 +15,22 @@ async function sendReminderIfDue() {
   const expiresAtMs = status.expiresAt ? new Date(status.expiresAt).getTime() : 0;
   const remainingMs = expiresAtMs - Date.now();
 
-  const isDue = !status.valid || remainingMs < REMIND_WHEN_LESS_THAN_MS;
+  // The assumed-expiry clock (issuedAt + 5 days) resets to "fresh" on every process restart
+  // whenever SWIGGY_TOKEN_ISSUED_AT isn't set alongside SWIGGY_ACCESS_TOKEN - Render restarts
+  // routinely (free-tier idle sleep, every deploy), so that heuristic alone silently under-
+  // reported staleness and this reminder never fired for a session that had actually already
+  // died (confirmed: it surfaced to her as a generic error instead). A real listTools() call is
+  // the only real source of truth for "does this still work RIGHT NOW" - checked here as a
+  // backstop alongside the heuristic (which still gives a useful early warning when the clock
+  // happens to be accurate, i.e. no restart since the last real login).
+  let actuallyBroken = false;
+  try {
+    await swiggyMcpService.listTools();
+  } catch {
+    actuallyBroken = true;
+  }
+
+  const isDue = actuallyBroken || !status.valid || remainingMs < REMIND_WHEN_LESS_THAN_MS;
   const recentlyReminded = Date.now() - lastReminderSentAt < MIN_GAP_BETWEEN_REMINDERS_MS;
 
   if (!isDue || recentlyReminded) return;
@@ -22,7 +38,7 @@ async function sendReminderIfDue() {
   const link = swiggyAuthService.generateAuthorizeUrl();
   const message =
     `🛒 *Grocery Agent: Swiggy relink needed*\n\n` +
-    `The grocery ordering session ${status.valid ? 'is about to expire' : 'has expired'}. Tap this link and approve to keep ordering working:\n\n` +
+    `The grocery ordering session ${actuallyBroken || !status.valid ? 'has expired' : 'is about to expire'}. Tap this link and approve to keep ordering working:\n\n` +
     `${link}\n\n` +
     `Takes a few seconds - no laptop or app needed.`;
 
