@@ -1,7 +1,15 @@
 import { GoogleGenerativeAI, Content, Part } from '@google/generative-ai';
-import { AGENT_SYSTEM_PROMPT } from './prompts';
-import { getSwiggyFunctionDeclarations, executeSwiggyTool, beginSwiggyToolTurn } from '../swiggy/gemini_tools';
+import { buildAgentSystemPrompt } from './prompts';
+import {
+  executeSwiggyTool,
+  getSwiggyFunctionDeclarations,
+  SwiggyToolExecutionContext,
+  synchronizeSwiggyProfileRuntime
+} from '../swiggy/gemini_tools';
 import { SwiggySessionExpiredError } from '../swiggy/mcp_client';
+import { profileStore } from '../profiles/store';
+import { AgentProfile } from '../profiles/types';
+import { PaymentAuthorization, SwiggyDomain } from '../swiggy/payment_safety';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -10,6 +18,7 @@ export interface ToolCallLog {
   toolName: string;
   args: Record<string, any>;
   result: any;
+  swiggyDomain: SwiggyDomain | null;
   timestamp: string;
 }
 
@@ -20,11 +29,30 @@ export interface AgentResponse {
 
 export type UserInput = { type: 'text'; text: string } | { type: 'audio'; data: Buffer; mimeType: string };
 
-const NOT_CONFIGURED_REPLY =
-  '⚠️ Sorry Sudha Akka, the grocery agent isn\'t fully set up right now. Please ask Vyshak to check the configuration.';
+export interface AgentTurnContext {
+  /** Issued only by the server payment state machine for this exact inbound turn. */
+  paymentAuthorization?: PaymentAuthorization;
+}
 
-const UNAVAILABLE_REPLY =
-  '⚠️ Sorry Sudha Akka, I\'m having trouble understanding right now. Please try again in a moment, or ask Vyshak to check.';
+function serviceReply(profile: AgentProfile, kind: 'not-configured' | 'unavailable' | 'expired' | 'rate-limit'): string {
+  const english = {
+    'not-configured': `⚠️ Sorry ${profile.displayName}, your ordering agent is not fully configured yet. Please check the household desk.`,
+    unavailable: `⚠️ Sorry ${profile.displayName}, I’m having trouble right now. Please try again in a moment.`,
+    expired: `⚠️ Sorry ${profile.displayName}, this profile’s Swiggy session has expired. Please reconnect it from the household desk and try again.`,
+    'rate-limit': `⚠️ Sorry ${profile.displayName}, I’m a bit overloaded right now. Please wait a minute and try again.`
+  }[kind];
+
+  if (profile.language.replyMode === 'kanglish-kannada') {
+    const kannada = {
+      'not-configured': `⚠️ ಕ್ಷಮಿಸಿ ${profile.displayName}, ನಿಮ್ಮ ಆರ್ಡರಿಂಗ್ ಏಜೆಂಟ್ ಇನ್ನೂ ಪೂರ್ಣವಾಗಿ ಸಿದ್ಧವಾಗಿಲ್ಲ. ಹೌಸ್‌ಹೋಲ್ಡ್ ಡೆಸ್ಕ್‌ನಲ್ಲಿ ಪರಿಶೀಲಿಸಿ.`,
+      unavailable: `⚠️ ಕ್ಷಮಿಸಿ ${profile.displayName}, ಈಗ ಸ್ವಲ್ಪ ತೊಂದರೆ ಆಗುತ್ತಿದೆ. ದಯವಿಟ್ಟು ಸ್ವಲ್ಪ ಹೊತ್ತಿನ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.`,
+      expired: `⚠️ ಕ್ಷಮಿಸಿ ${profile.displayName}, ಈ ಪ್ರೊಫೈಲ್‌ನ Swiggy ಸೆಷನ್ ಅವಧಿ ಮುಗಿದಿದೆ. ಹೌಸ್‌ಹೋಲ್ಡ್ ಡೆಸ್ಕ್‌ನಲ್ಲಿ ಮತ್ತೆ ಕನೆಕ್ಟ್ ಮಾಡಿ.`,
+      'rate-limit': `⚠️ ಕ್ಷಮಿಸಿ ${profile.displayName}, ಈಗ ಹೆಚ್ಚು ವಿನಂತಿಗಳಿವೆ. ಒಂದು ನಿಮಿಷ ಬಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.`
+    }[kind];
+    return `${english}\n\n${kannada}`;
+  }
+  return english;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,21 +113,41 @@ export class GeminiAgentService {
    * MCP tools, in Kannada, Kanglish, or English - accepts either typed text or a voice note
    * (Gemini understands audio natively, no separate transcription step needed).
    */
-  public async processMessage(sessionId: string, input: UserInput): Promise<AgentResponse> {
-    const history = this.getHistory(sessionId);
+  public async processMessage(
+    sessionId: string,
+    input: UserInput,
+    turnContext: AgentTurnContext = {}
+  ): Promise<AgentResponse> {
     const toolLogs: ToolCallLog[] = [];
-
-    if (!process.env.GEMINI_API_KEY) {
-      return { reply: NOT_CONFIGURED_REPLY, toolCallsExecuted: [] };
+    const profile = await profileStore.resolveProfile(sessionId);
+    if (!profile) {
+      return {
+        reply: '⚠️ This WhatsApp number does not have an agent profile yet. Add it in the household desk first.',
+        toolCallsExecuted: []
+      };
+    }
+    synchronizeSwiggyProfileRuntime(profile);
+    if (!profile.enabled) {
+      return {
+        reply: `⏸️ ${profile.assistantName} is paused for this number. You can turn it back on from the household desk.`,
+        toolCallsExecuted: []
+      };
     }
 
-    // Must happen before any tool calls this turn - see gemini_tools.ts's checkout safety gate.
-    beginSwiggyToolTurn(sessionId);
+    const profileSessionId = profile.id;
+    const history = this.getHistory(profileSessionId);
+
+    if (!process.env.GEMINI_API_KEY) {
+      return {
+        reply: serviceReply(profile, 'not-configured'),
+        toolCallsExecuted: []
+      };
+    }
 
     try {
       let functionDeclarations;
       try {
-        functionDeclarations = await getSwiggyFunctionDeclarations();
+        functionDeclarations = await getSwiggyFunctionDeclarations(profileSessionId);
       } catch (declError: any) {
         // This step only ever talks to Swiggy's MCP servers, so a failure here is
         // overwhelmingly an expired/invalid session, not a Gemini problem - but it was falling
@@ -112,7 +160,7 @@ export class GeminiAgentService {
 
       const model = this.genAI.getGenerativeModel({
         model: this.primaryModelName,
-        systemInstruction: AGENT_SYSTEM_PROMPT,
+        systemInstruction: buildAgentSystemPrompt(profile),
         tools: [{ functionDeclarations }]
       });
 
@@ -152,13 +200,21 @@ export class GeminiAgentService {
         for (const call of functionCalls) {
           const toolName = call.name;
           const args = call.args as Record<string, any>;
+          const executionContext: SwiggyToolExecutionContext = { domain: null };
 
-          const result = await executeSwiggyTool(sessionId, toolName, args);
+          const result = await executeSwiggyTool(
+            profileSessionId,
+            toolName,
+            args,
+            turnContext.paymentAuthorization,
+            executionContext
+          );
 
           toolLogs.push({
             toolName,
             args,
             result,
+            swiggyDomain: executionContext.domain,
             timestamp: new Date().toLocaleTimeString('en-IN')
           });
 
@@ -195,19 +251,22 @@ export class GeminiAgentService {
       if (error instanceof SwiggySessionExpiredError) {
         console.warn('⚠️ Swiggy session expired mid-conversation.');
         return {
-          reply: '⚠️ Sorry Sudha Akka, the grocery ordering session has expired. Please ask Vyshak to relink it (he gets a WhatsApp reminder automatically) and try again in a bit.',
+          reply: serviceReply(profile, 'expired'),
           toolCallsExecuted: toolLogs
         };
       }
       if (isRateLimitError(error)) {
         console.error('❌ Gemini rate limit exhausted retries:', error.message);
         return {
-          reply: '⚠️ Sorry Sudha Akka, I\'m a bit overloaded right now (too many requests). Please wait a minute and try again.',
+          reply: serviceReply(profile, 'rate-limit'),
           toolCallsExecuted: toolLogs
         };
       }
       console.error('❌ Gemini agent error:', error.message);
-      return { reply: UNAVAILABLE_REPLY, toolCallsExecuted: toolLogs };
+      return {
+        reply: serviceReply(profile, 'unavailable'),
+        toolCallsExecuted: toolLogs
+      };
     }
   }
 }

@@ -4,22 +4,25 @@ import { swiggyAuthService } from './auth';
 
 export class SwiggySessionExpiredError extends Error {
   constructor() {
-    super('Swiggy session has expired or was never linked. Ask Vyshak to tap the relink link.');
+    super('The active profile\'s Swiggy session has expired or was never linked.');
     this.name = 'SwiggySessionExpiredError';
   }
 }
 
 /**
- * Thin wrapper around a Swiggy MCP server (Instamart or Food - same auth session works for
- * both, confirmed empirically). Opens a fresh connection per call rather than holding a
+ * Thin wrapper around a Swiggy MCP server (Instamart or Food - the active profile's auth session
+ * works for both, confirmed empirically). Opens a fresh connection per call rather than holding a
  * persistent one - this is a low-traffic personal bot, and a fresh connection sidesteps any
  * complexity around a long-lived session outliving a token refresh.
  */
 class SwiggyMcpService {
   constructor(private readonly baseUrl: string) {}
 
-  private async withClient<T>(fn: (client: Client) => Promise<T>): Promise<T> {
-    const token = swiggyAuthService.getAccessToken();
+  private async withClient<T>(
+    contextId: string,
+    fn: (client: Client) => Promise<T>
+  ): Promise<T> {
+    const token = await swiggyAuthService.getAccessToken(contextId);
     if (!token) {
       throw new SwiggySessionExpiredError();
     }
@@ -37,8 +40,8 @@ class SwiggyMcpService {
     }
   }
 
-  public async listTools() {
-    return this.withClient((client) => client.listTools());
+  public async listTools(contextId: string) {
+    return this.withClient(contextId, (client) => client.listTools());
   }
 
   /**
@@ -60,8 +63,14 @@ class SwiggyMcpService {
    * structuredContent is missing the success:false/message wrapper the text JSON has, so text-JSON
    * stays primary and this is purely a fallback for when text has no JSON to offer at all.
    */
-  public async callTool(name: string, args: Record<string, any>): Promise<any> {
-    const result = await this.withClient((client) => client.callTool({ name, arguments: args }));
+  public async callTool(
+    contextId: string,
+    name: string,
+    args: Record<string, any>
+  ): Promise<any> {
+    const result = await this.withClient(contextId, (client) =>
+      client.callTool({ name, arguments: args })
+    );
 
     if (result.isError) {
       const message = (result.content as any[])?.[0]?.text || `Swiggy tool "${name}" returned an error`;
@@ -87,8 +96,8 @@ class SwiggyMcpService {
     return { success: true, data: result.content };
   }
 
-  public isConfigured(): boolean {
-    return swiggyAuthService.isSessionValid();
+  public async isConfigured(contextId: string): Promise<boolean> {
+    return swiggyAuthService.isSessionValid(contextId);
   }
 }
 

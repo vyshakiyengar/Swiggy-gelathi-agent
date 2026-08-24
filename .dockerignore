@@ -4,4 +4,5 @@ dist
 .git
 .agents
 auth_info_baileys
+.agent-data
 npm-debug.log

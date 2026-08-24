@@ -1,9 +1,14 @@
 import { FunctionDeclaration, Schema, SchemaType } from '@google/generative-ai';
 import { swiggyMcpService, swiggyFoodMcpService } from './mcp_client';
-
-const DEFAULT_ADDRESS_ID = process.env.SWIGGY_DEFAULT_ADDRESS_ID || '112427323';
-const DEFAULT_LAT = Number(process.env.SWIGGY_DEFAULT_LAT) || 12.907784;
-const DEFAULT_LNG = Number(process.env.SWIGGY_DEFAULT_LNG) || 77.545805;
+import { profileStore } from '../profiles/store';
+import { AgentProfile } from '../profiles/types';
+import {
+  clearPaymentSafetyState,
+  consumePaymentAuthorization,
+  invalidatePaymentAuthorization,
+  PaymentAuthorization,
+  SwiggyDomain
+} from './payment_safety';
 
 /**
  * Instamart (grocery) tools exposed to the agent, via mcp.swiggy.com/im. get_addresses is
@@ -58,64 +63,56 @@ const EXPOSED_FOOD_TOOLS = [
 const SHARED_TOOLS = ['get_payment_options', 'check_payment_status', 'confirm_order'];
 
 const ORDER_PLACING_TOOLS = ['checkout', 'place_food_order'];
-const VALID_PAYMENT_METHODS = ['Cash', 'COD', 'UPI', 'SwiggyPay'];
-
-type SwiggyDomain = 'food' | 'instamart';
+const PAYMENT_AUTHORIZATION_INVALIDATING_TOOLS = [
+  'update_cart',
+  'clear_cart',
+  'update_food_cart',
+  'flush_food_cart',
+  'apply_food_coupon',
+  'get_payment_options'
+];
 
 /**
  * Which domain (grocery vs food) each session most recently touched - updated on every
  * domain-specific tool call, read whenever a SHARED_TOOLS call needs to know which server's cart
- * it should actually hit instead of assuming Instamart. Defaults to 'instamart' if a shared tool
- * is somehow called before any domain tool this session (shouldn't happen - there's always a
- * cart action first).
+ * it should actually hit instead of assuming Instamart. A shared tool is refused if no
+ * domain-specific cart action established this state first.
  */
 const sessionDomain: Map<string, SwiggyDomain> = new Map();
+const profileRuntimeFingerprint = new Map<string, string>();
 
-/**
- * Deterministic, code-level guard against placing an order without genuine confirmation - the
- * prompt says "never call checkout without confirmation" too, but that's a probabilistic
- * instruction an LLM can fail to follow, and this moves real money. Two independent checks, both
- * of which real Swiggy behavior makes necessary:
- *
- * 1. paymentMethod must be explicitly present and valid. Swiggy's own checkout/place_food_order
- *    schemas document paymentMethod as optional and "auto-defaults to the user's available
- *    method if omitted" - meaning an order-placing call with no payment method doesn't error,
- *    it silently succeeds using whatever Swiggy picks (observed in practice: Cash on Delivery).
- * 2. get_payment_options must have been shown in a PRIOR, already-completed conversation turn -
- *    not merely earlier in the same tool-calling loop. This forces a real round-trip (the bot
- *    shows real payment buttons, a genuinely new incoming WhatsApp message must arrive) before
- *    an order can be placed, even if a single message tries to bundle "add items and confirm and
- *    pay by cash" all at once.
- *
- * See beginSwiggyToolTurn(), called once per processMessage() invocation in gemini.ts.
- */
-// Keyed by `${sessionId}:${domain}`, not just sessionId - a Food payment-options call showing
-// real choices must not satisfy the gate for an Instamart checkout that never itself called
-// get_payment_options against Instamart's cart, and vice versa (see sessionDomain above - the
-// two domains' carts and payment options are independent even though the tool names match).
-const paymentOptionsShownLastTurn: Set<string> = new Set();
-const paymentOptionsShownThisTurn: Set<string> = new Set();
-
-function domainKey(sessionId: string, domain: SwiggyDomain): string {
-  return `${sessionId}:${domain}`;
+function runtimeFingerprint(profile: AgentProfile): string {
+  return [
+    profile.updatedAt,
+    profile.enabled,
+    profile.capabilities.instamart,
+    profile.capabilities.food,
+    profile.address?.id ?? '',
+    profile.address?.latitude ?? '',
+    profile.address?.longitude ?? '',
+    profile.swiggy.connected,
+    profile.swiggy.expiresAt ?? ''
+  ].join('|');
 }
 
-/** Call once at the start of every processMessage() turn, before any tool calls happen. */
-export function beginSwiggyToolTurn(sessionId: string): void {
-  for (const domain of ['food', 'instamart'] as const) {
-    const key = domainKey(sessionId, domain);
-    if (paymentOptionsShownThisTurn.has(key)) {
-      paymentOptionsShownLastTurn.add(key);
-    } else {
-      paymentOptionsShownLastTurn.delete(key);
-    }
-    paymentOptionsShownThisTurn.delete(key);
+/** Invalidates cart/payment routing whenever dashboard or connection state changes. */
+export function synchronizeSwiggyProfileRuntime(profile: AgentProfile): void {
+  const fingerprint = runtimeFingerprint(profile);
+  const previous = profileRuntimeFingerprint.get(profile.id);
+  if (previous !== undefined && previous !== fingerprint) {
+    sessionDomain.delete(profile.id);
+    clearPaymentSafetyState(profile.id);
   }
+  profileRuntimeFingerprint.set(profile.id, fingerprint);
+}
+
+export interface SwiggyToolExecutionContext {
+  domain: SwiggyDomain | null;
 }
 
 /**
- * Params auto-filled server-side per tool, stripped from what the model sees. Covers the fixed
- * delivery address, and lat/lng where a tool needs them but has no real way to source them:
+ * Params auto-filled server-side per tool, stripped from what the model sees. Covers the active
+ * profile's selected delivery address, and lat/lng where a tool needs them but has no other source:
  * - track_order: despite get_orders's response promising "delivery address coordinates", they're
  *   not actually present (confirmed empirically), so lat/lng are injected from the known fixed
  *   address instead.
@@ -124,31 +121,63 @@ export function beginSwiggyToolTurn(sessionId: string): void {
  *   Instamart call, and removes a step where the model would otherwise have to correctly recall
  *   these from an earlier tool response.
  */
-const AUTO_INJECTED_PARAMS_BY_TOOL: Record<string, () => Record<string, any>> = {
-  search_products: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  your_go_to_items: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  update_cart: () => ({ selectedAddressId: DEFAULT_ADDRESS_ID }),
-  checkout: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  track_order: () => ({ lat: DEFAULT_LAT, lng: DEFAULT_LNG }),
+const AUTO_INJECTED_PARAM_NAMES_BY_TOOL: Record<string, string[]> = {
+  search_products: ['addressId'],
+  your_go_to_items: ['addressId'],
+  update_cart: ['selectedAddressId'],
+  checkout: ['addressId'],
+  track_order: ['lat', 'lng'],
   // Instamart grocery orders are tagged orderType "DASH" (confirmed empirically), not
   // "INSTAMART" - despite that being the more obvious-looking example value in the tool's own
   // parameter description. Forced here so the model can't guess wrong and see zero orders.
-  get_orders: () => ({ orderType: 'DASH' }),
+  get_orders: ['orderType'],
 
-  search_restaurants: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  search_menu: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  get_restaurant_menu: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  get_food_cart: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  update_food_cart: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  place_food_order: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  fetch_food_coupons: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  apply_food_coupon: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  get_food_orders: () => ({ addressId: DEFAULT_ADDRESS_ID }),
+  search_restaurants: ['addressId'],
+  search_menu: ['addressId'],
+  get_restaurant_menu: ['addressId'],
+  get_food_cart: ['addressId'],
+  update_food_cart: ['addressId'],
+  place_food_order: ['addressId'],
+  fetch_food_coupons: ['addressId'],
+  apply_food_coupon: ['addressId'],
+  get_food_orders: ['addressId'],
 
-  get_payment_options: () => ({ addressId: DEFAULT_ADDRESS_ID }),
-  check_payment_status: () => ({ addressId: DEFAULT_ADDRESS_ID, lat: DEFAULT_LAT, lng: DEFAULT_LNG }),
-  confirm_order: () => ({ addressId: DEFAULT_ADDRESS_ID, lat: DEFAULT_LAT, lng: DEFAULT_LNG })
+  get_payment_options: ['addressId'],
+  check_payment_status: ['addressId', 'lat', 'lng'],
+  confirm_order: ['addressId', 'lat', 'lng']
 };
+
+function buildAutoInjectedParams(
+  toolName: string,
+  profile: AgentProfile
+): Record<string, any> | null {
+  if (toolName === 'get_orders') return { orderType: 'DASH' };
+
+  const names = AUTO_INJECTED_PARAM_NAMES_BY_TOOL[toolName];
+  if (!names) return {};
+
+  const address = profile.address;
+  if (!address?.id) return null;
+
+  const params: Record<string, any> = {};
+  if (names.includes('addressId')) params.addressId = address.id;
+  if (names.includes('selectedAddressId')) {
+    params.selectedAddressId = address.id;
+  }
+  if (names.includes('lat') || names.includes('lng')) {
+    if (
+      address.latitude === null ||
+      address.longitude === null ||
+      !Number.isFinite(address.latitude) ||
+      !Number.isFinite(address.longitude)
+    ) {
+      return null;
+    }
+    params.lat = address.latitude;
+    params.lng = address.longitude;
+  }
+  return params;
+}
 
 function convertJsonSchemaToGemini(schema: any): Schema {
   const result: Schema = {};
@@ -177,9 +206,9 @@ function convertJsonSchemaToGemini(schema: any): Schema {
 
 function buildDeclaration(tool: { name: string; description?: string; inputSchema: any }): FunctionDeclaration {
   const schema = JSON.parse(JSON.stringify(tool.inputSchema));
-  const injectedParams = AUTO_INJECTED_PARAMS_BY_TOOL[tool.name];
-  if (injectedParams && schema.properties) {
-    for (const paramName of Object.keys(injectedParams())) {
+  const injectedParamNames = AUTO_INJECTED_PARAM_NAMES_BY_TOOL[tool.name];
+  if (injectedParamNames && schema.properties) {
+    for (const paramName of injectedParamNames) {
       delete schema.properties[paramName];
       schema.required = (schema.required || []).filter((r: string) => r !== paramName);
     }
@@ -199,10 +228,30 @@ let cachedDeclarations: FunctionDeclaration[] | null = null;
  * to Gemini's function-calling format. Pulled live rather than hand-transcribed so this stays
  * correct if Swiggy changes their tools; cached in-process after the first successful fetch.
  */
-export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclaration[]> {
-  if (cachedDeclarations) return cachedDeclarations;
+export async function getSwiggyFunctionDeclarations(
+  contextId: string
+): Promise<FunctionDeclaration[]> {
+  const profile = await profileStore.resolveProfile(contextId);
+  if (!profile) throw new Error('No agent profile matches this WhatsApp number.');
+  synchronizeSwiggyProfileRuntime(profile);
 
-  const [imTools, foodTools] = await Promise.all([swiggyMcpService.listTools(), swiggyFoodMcpService.listTools()]);
+  if (cachedDeclarations) {
+    return cachedDeclarations.filter((declaration) => {
+      if (!profile.capabilities.food && EXPOSED_FOOD_TOOLS.includes(declaration.name)) return false;
+      if (!profile.capabilities.instamart && EXPOSED_TOOLS.includes(declaration.name)) return false;
+      if (
+        !profile.capabilities.food &&
+        !profile.capabilities.instamart &&
+        SHARED_TOOLS.includes(declaration.name)
+      ) return false;
+      return true;
+    });
+  }
+
+  const [imTools, foodTools] = await Promise.all([
+    swiggyMcpService.listTools(profile.id),
+    swiggyFoodMcpService.listTools(profile.id)
+  ]);
 
   const declarations: FunctionDeclaration[] = [];
 
@@ -218,7 +267,16 @@ export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclarati
   }
 
   cachedDeclarations = declarations;
-  return declarations;
+  return declarations.filter((declaration) => {
+    if (!profile.capabilities.food && EXPOSED_FOOD_TOOLS.includes(declaration.name)) return false;
+    if (!profile.capabilities.instamart && EXPOSED_TOOLS.includes(declaration.name)) return false;
+    if (
+      !profile.capabilities.food &&
+      !profile.capabilities.instamart &&
+      SHARED_TOOLS.includes(declaration.name)
+    ) return false;
+    return true;
+  });
 }
 
 /**
@@ -229,7 +287,19 @@ export async function getSwiggyFunctionDeclarations(): Promise<FunctionDeclarati
  * despite the prompt explicitly saying not to), and since real tool names here are real, live
  * actions against a real account, that can't be trusted through on good faith alone.
  */
-export async function executeSwiggyTool(sessionId: string, toolName: string, args: Record<string, any>): Promise<any> {
+export async function executeSwiggyTool(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, any>,
+  paymentAuthorization?: PaymentAuthorization,
+  executionContext?: SwiggyToolExecutionContext
+): Promise<any> {
+  const profile = await profileStore.resolveProfile(sessionId);
+  if (profile) synchronizeSwiggyProfileRuntime(profile);
+  if (!profile || !profile.enabled) {
+    return { success: false, error: 'This WhatsApp number does not have an active agent profile.' };
+  }
+
   const isExposedFoodTool = EXPOSED_FOOD_TOOLS.includes(toolName);
   const isExposedGroceryTool = EXPOSED_TOOLS.includes(toolName);
   const isSharedTool = SHARED_TOOLS.includes(toolName);
@@ -240,49 +310,90 @@ export async function executeSwiggyTool(sessionId: string, toolName: string, arg
     return { success: false, error: `Tool "${toolName}" is not available.` };
   }
 
+  if (isExposedFoodTool && !profile.capabilities.food) {
+    return { success: false, error: 'Food ordering is turned off for this profile.' };
+  }
+  if (isExposedGroceryTool && !profile.capabilities.instamart) {
+    return { success: false, error: 'Instamart ordering is turned off for this profile.' };
+  }
+
   // Domain-specific tools set the session's active domain; shared tools read it back instead of
   // assuming Instamart. checkout/place_food_order aren't shared, so their domain is always known
   // directly from the tool name itself.
-  if (isExposedFoodTool) sessionDomain.set(sessionId, 'food');
-  else if (isExposedGroceryTool) sessionDomain.set(sessionId, 'instamart');
-  const domain: SwiggyDomain = isSharedTool
-    ? sessionDomain.get(sessionId) ?? 'instamart'
+  if (isExposedFoodTool) sessionDomain.set(profile.id, 'food');
+  else if (isExposedGroceryTool) sessionDomain.set(profile.id, 'instamart');
+  const domain: SwiggyDomain | undefined = isSharedTool
+    ? sessionDomain.get(profile.id)
     : isExposedFoodTool
       ? 'food'
       : 'instamart';
 
+  if (!domain) {
+    return {
+      success: false,
+      error:
+        'No active Swiggy cart domain is available for this shared tool. Open the relevant Food or Instamart cart first.'
+    };
+  }
+  if (executionContext) executionContext.domain = domain;
+
+  if (
+    (domain === 'food' && !profile.capabilities.food) ||
+    (domain === 'instamart' && !profile.capabilities.instamart)
+  ) {
+    return {
+      success: false,
+      error: `${domain === 'food' ? 'Food ordering' : 'Instamart ordering'} is turned off for this profile.`
+    };
+  }
+
+  if (
+    !ORDER_PLACING_TOOLS.includes(toolName) &&
+    PAYMENT_AUTHORIZATION_INVALIDATING_TOOLS.includes(toolName)
+  ) {
+    invalidatePaymentAuthorization(paymentAuthorization);
+  }
+
+  let authorizedPaymentArgs: Record<string, string> | null = null;
   if (ORDER_PLACING_TOOLS.includes(toolName)) {
-    const paymentMethod = args.paymentMethod;
-    if (!paymentMethod || !VALID_PAYMENT_METHODS.includes(paymentMethod)) {
-      console.warn(`⚠️ Refused ${toolName} for session ${sessionId}: no explicit valid paymentMethod (got ${JSON.stringify(paymentMethod)}).`);
+    const authorizationResult = consumePaymentAuthorization(
+      paymentAuthorization,
+      profile.id,
+      domain,
+      args
+    );
+    if (!authorizationResult.ok) {
+      console.warn(
+        `⚠️ Refused ${toolName} for profile ${profile.id}: ${authorizationResult.error}`
+      );
       return {
         success: false,
-        error:
-          'Cannot place the order: no specific payment method was confirmed. Call get_payment_options, show her the real choices, and wait for her to explicitly pick one before calling this again with that exact paymentMethod.'
+        error: authorizationResult.error
       };
     }
-    if (!paymentOptionsShownLastTurn.has(domainKey(sessionId, domain))) {
-      console.warn(`⚠️ Refused ${toolName} for session ${sessionId}: get_payment_options was not shown for domain "${domain}" in a prior completed turn.`);
-      return {
-        success: false,
-        error:
-          'Cannot place the order yet: payment options have not been shown to her in a previous message. Call get_payment_options now, send her the bill and real payment choices, and wait for her actual next reply - do not call this again in the same turn.'
-      };
-    }
+    authorizedPaymentArgs = authorizationResult.paymentArgs;
   }
 
-  const injectedParams = AUTO_INJECTED_PARAMS_BY_TOOL[toolName];
-  const finalArgs = injectedParams ? { ...args, ...injectedParams() } : args;
+  const injectedParams = buildAutoInjectedParams(toolName, profile);
+  if (injectedParams === null) {
+    return {
+      success: false,
+      error: 'No complete Swiggy delivery address is configured for this profile. Choose a saved address in the dashboard before ordering.'
+    };
+  }
+  const finalArgs = {
+    ...args,
+    ...(authorizedPaymentArgs ?? {}),
+    ...injectedParams
+  };
+  if (authorizedPaymentArgs?.paymentMethod === 'Cash') {
+    delete finalArgs.intentApp;
+  }
   const service = domain === 'food' ? swiggyFoodMcpService : swiggyMcpService;
-  const result = await service.callTool(toolName, finalArgs);
+  const result = await service.callTool(profile.id, toolName, finalArgs);
 
-  if (toolName === 'get_payment_options' && result?.success !== false) {
-    paymentOptionsShownThisTurn.add(domainKey(sessionId, domain));
-  }
   if (ORDER_PLACING_TOOLS.includes(toolName) && result?.success !== false) {
-    // Order placed - a new order later must go through a fresh payment-options round trip.
-    paymentOptionsShownLastTurn.delete(domainKey(sessionId, domain));
-    paymentOptionsShownThisTurn.delete(domainKey(sessionId, domain));
+    clearPaymentSafetyState(profile.id);
   }
 
   return result;

@@ -1,13 +1,18 @@
 {
   "name": "swiggy-instamart-whatsapp-agent",
   "version": "1.0.0",
-  "description": "Conversational AI agent for Mom to order groceries from Swiggy Instamart via WhatsApp with Kannada/Kanglish support, using Swiggy's official Instamart MCP server.",
+  "description": "Profile-scoped WhatsApp agents for ordering from Swiggy Food and Instamart, with a private household configuration desk.",
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node src/server.ts",
     "test:agent": "ts-node src/test_agent.ts",
     "test:cloud": "ts-node src/test_meta_cloud.ts",
-    "build": "tsc",
+    "test:dashboard": "ts-node src/test_dashboard.ts",
+    "test:payment-safety": "ts-node src/test_payment_safety.ts",
+    "test:profiles": "ts-node src/test_profiles.ts",
+    "test:swiggy-auth": "ts-node src/test_swiggy_auth.ts",
+    "test:webhook-auth": "ts-node src/test_webhook_signature.ts",
+    "build": "tsc && node dist/copy-dashboard-assets.js",
     "start": "node dist/server.js"
   },
   "dependencies": {

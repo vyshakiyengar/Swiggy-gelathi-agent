@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="A private household desk for configuring the Sahayaka WhatsApp ordering agents."
+    />
+    <meta name="theme-color" content="#f4eddf" />
+    <title>Sahayaka Household Desk</title>
+    <link rel="stylesheet" href="/dashboard/styles.css?v=calm-1" />
+    <script src="/dashboard/app.js?v=calm-1" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to configuration</a>
+
+    <div class="ambient-mark ambient-mark-one" aria-hidden="true">ಸ</div>
+    <div class="ambient-mark ambient-mark-two" aria-hidden="true">ಗೆ</div>
+
+    <section
+      id="login-overlay"
+      class="login-overlay"
+      aria-labelledby="login-title"
+    >
+      <div class="login-card">
+        <div class="brand-lockup brand-lockup-login" aria-hidden="true">
+          <span class="brand-seal">ಸ</span>
+          <span class="brand-rule"></span>
+          <span class="brand-kicker">Household edition</span>
+        </div>
+        <p class="eyebrow">Private family console</p>
+        <h1 id="login-title">Household setup.<em>Private, simple, and yours.</em></h1>
+        <p class="login-intro">
+          Configure who Sahayaka helps, how it speaks, and where every real
+          order should arrive.
+        </p>
+
+        <form id="login-form" class="login-form">
+          <label class="field" for="dashboard-password">
+            <span class="field-label">Dashboard password</span>
+            <span class="input-shell">
+              <input
+                id="dashboard-password"
+                name="password"
+                type="password"
+                autocomplete="current-password"
+                required
+                autofocus
+              />
+              <button
+                id="password-visibility"
+                class="reveal-button"
+                type="button"
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                Show
+              </button>
+            </span>
+          </label>
+          <button id="login-button" class="primary-button login-button" type="submit">
+            <span>Open household desk</span>
+            <span aria-hidden="true">→</span>
+          </button>
+          <p id="login-error" class="form-error" role="alert" hidden></p>
+        </form>
+
+        <div class="login-footnote">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span>Private household access</span>
+        </div>
+      </div>
+      <div class="login-aside" aria-hidden="true">
+        <p>Two people</p>
+        <strong>One thoughtful<br />household helper.</strong>
+        <span>WhatsApp → Sahayaka → Swiggy</span>
+      </div>
+    </section>
+
+    <div id="dashboard" class="dashboard" hidden>
+      <header class="masthead">
+        <a class="brand-lockup" href="#main-content" aria-label="Sahayaka household desk home">
+          <span class="brand-seal" aria-hidden="true">ಸ</span>
+          <span>
+            <strong>Sahayaka</strong>
+            <small>Household desk</small>
+          </span>
+        </a>
+
+        <div class="profile-picker">
+          <label for="profile-select">Configuring</label>
+          <div class="select-shell select-shell-profile">
+            <span id="profile-initial" class="profile-initial" aria-hidden="true">—</span>
+            <select id="profile-select" aria-describedby="profile-context" disabled>
+              <option value="">Loading household…</option>
+            </select>
+            <span class="select-chevron" aria-hidden="true">⌄</span>
+          </div>
+          <p id="profile-context" class="profile-context">Choose a WhatsApp number</p>
+        </div>
+
+        <div class="masthead-actions">
+          <span id="save-state" class="save-state" aria-live="polite">All changes saved</span>
+          <button id="header-save" class="primary-button compact-button" type="button" disabled>
+            Save changes
+          </button>
+          <button id="logout-button" class="icon-text-button" type="button">
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      <div class="paper-rule" aria-hidden="true">
+        <span>Private family configuration</span>
+        <span>ಬೆಂಗಳೂರು · Bengaluru</span>
+      </div>
+
+      <section id="global-error" class="global-error" role="alert" hidden>
+        <div>
+          <p class="eyebrow">The desk could not load</p>
+          <p id="global-error-message"></p>
+        </div>
+        <button id="global-retry" class="secondary-button" type="button">Try again</button>
+      </section>
+
+      <section class="readiness-panel" aria-labelledby="readiness-title">
+        <div class="readiness-heading">
+          <div>
+            <p class="eyebrow">At a glance</p>
+            <h1 id="readiness-title">
+              <span id="readiness-name">This agent</span>
+              <em id="readiness-summary">is getting ready.</em>
+            </h1>
+          </div>
+          <div id="readiness-stamp" class="readiness-stamp is-checking">
+            <span class="status-orbit" aria-hidden="true"></span>
+            <strong>Checking</strong>
+            <small>Live household status</small>
+          </div>
+        </div>
+
+        <nav class="readiness-strip" aria-label="Agent setup status">
+          <button class="readiness-item is-checking" data-readiness="whatsapp" data-jump="person-section" type="button">
+            <span class="readiness-index">01</span>
+            <span class="readiness-copy">
+              <strong>WhatsApp</strong>
+              <small>Checking channel…</small>
+            </span>
+            <span class="readiness-symbol" aria-hidden="true">·</span>
+          </button>
+          <button class="readiness-item is-checking" data-readiness="swiggy" data-jump="swiggy-section" type="button">
+            <span class="readiness-index">02</span>
+            <span class="readiness-copy">
+              <strong>Swiggy</strong>
+              <small>Checking account…</small>
+            </span>
+            <span class="readiness-symbol" aria-hidden="true">·</span>
+          </button>
+          <button class="readiness-item is-checking" data-readiness="address" data-jump="address-section" type="button">
+            <span class="readiness-index">03</span>
+            <span class="readiness-copy">
+              <strong>Delivery</strong>
+              <small>Checking address…</small>
+            </span>
+            <span class="readiness-symbol" aria-hidden="true">·</span>
+          </button>
+          <button class="readiness-item is-checking" data-readiness="agent" data-jump="language-section" type="button">
+            <span class="readiness-index">04</span>
+            <span class="readiness-copy">
+              <strong>Agent</strong>
+              <small>Checking settings…</small>
+            </span>
+            <span class="readiness-symbol" aria-hidden="true">·</span>
+          </button>
+        </nav>
+        <p class="order-safety-note">
+          <span aria-hidden="true">✓</span>
+          <span><strong>Every real order needs a fresh payment choice after the full bill.</strong> Setup checks never touch carts or orders.</span>
+        </p>
+      </section>
+
+      <main id="main-content" class="desk-grid" tabindex="-1">
+        <form id="profile-form" class="profile-form" novalidate>
+          <details id="person-section" class="ledger-section setup-step" aria-labelledby="person-title" open>
+            <summary class="section-heading step-summary">
+              <span class="section-number" aria-hidden="true">01</span>
+              <div>
+                <p class="eyebrow">Step 1 · Basics</p>
+                <h2 id="person-title">Person &amp; assistant</h2>
+                <p>Name the person, their WhatsApp line, and their helper.</p>
+              </div>
+              <span class="step-chevron" aria-hidden="true"></span>
+            </summary>
+
+            <div class="step-body">
+
+            <div class="field-grid field-grid-two">
+              <label class="field" for="display-name">
+                <span class="field-label">Their name</span>
+                <input id="display-name" name="displayName" type="text" maxlength="80" autocomplete="name" required />
+                <small>Used in greetings and confirmations.</small>
+              </label>
+              <label class="field" for="relationship">
+                <span class="field-label">Household role</span>
+                <input id="relationship" name="relationship" type="text" readonly aria-readonly="true" />
+                <small>Fixed household slot; change the name instead.</small>
+              </label>
+              <label class="field" for="whatsapp-number">
+                <span class="field-label">WhatsApp number</span>
+                <span class="input-with-badge">
+                  <input id="whatsapp-number" name="whatsappNumber" type="tel" inputmode="tel" autocomplete="tel" maxlength="16" pattern="\+?[1-9][0-9]{7,14}" placeholder="+919876543210" />
+                  <span class="field-badge">Profile line</span>
+                </span>
+                <small>Use country code and digits only, for example +919876543210.</small>
+              </label>
+              <label class="field" for="assistant-name">
+                <span class="field-label">Assistant name</span>
+                <input id="assistant-name" name="assistantName" type="text" maxlength="60" placeholder="Sahayaka" required />
+                <small>What the agent calls itself in conversation.</small>
+              </label>
+            </div>
+
+            <div class="setting-row setting-row-featured">
+              <div>
+                <strong>Agent is available on WhatsApp</strong>
+                <p>Pause this profile without deleting its account or preferences.</p>
+              </div>
+              <label class="switch-control">
+                <input id="agent-enabled" name="enabled" type="checkbox" />
+                <span class="switch-track" aria-hidden="true"><span></span></span>
+                <span class="switch-label">Enabled</span>
+              </label>
+            </div>
+            </div>
+          </details>
+
+          <details id="swiggy-section" class="ledger-section setup-step" aria-labelledby="swiggy-title">
+            <summary class="section-heading step-summary">
+              <span class="section-number" aria-hidden="true">02</span>
+              <div>
+                <p class="eyebrow">Step 2 · Account</p>
+                <h2 id="swiggy-title">Connect Swiggy</h2>
+                <p>Use this person’s own Swiggy session for ordering.</p>
+              </div>
+              <span class="step-chevron" aria-hidden="true"></span>
+            </summary>
+
+            <div class="step-body">
+
+            <div id="swiggy-card" class="connection-card is-loading" aria-live="polite">
+              <div class="connection-seal" aria-hidden="true">S</div>
+              <div class="connection-copy">
+                <span id="swiggy-status-label" class="status-pill is-neutral">Checking</span>
+                <h3 id="swiggy-status-title">Checking the Swiggy session…</h3>
+                <p id="swiggy-status-detail">This only takes a moment.</p>
+                <dl class="connection-meta">
+                  <div>
+                    <dt>Linked</dt>
+                    <dd id="swiggy-linked-at">—</dd>
+                  </div>
+                  <div>
+                    <dt>Session</dt>
+                    <dd id="swiggy-expires-at">—</dd>
+                  </div>
+                </dl>
+              </div>
+              <div class="connection-actions">
+                <button id="swiggy-connect" class="primary-button" type="button">Connect Swiggy</button>
+                <button id="swiggy-disconnect" class="text-button danger-text" type="button" hidden>Disconnect</button>
+              </div>
+            </div>
+            </div>
+          </details>
+
+          <details id="address-section" class="ledger-section setup-step" aria-labelledby="address-title">
+            <summary class="section-heading step-summary">
+              <span class="section-number" aria-hidden="true">03</span>
+              <div>
+                <p class="eyebrow">Step 3 · Delivery</p>
+                <h2 id="address-title">Choose the doorstep</h2>
+                <p>Select one address already saved on this Swiggy account.</p>
+              </div>
+              <span class="step-chevron" aria-hidden="true"></span>
+            </summary>
+
+            <div class="step-body">
+              <div class="step-toolbar">
+              <button id="sync-addresses" class="secondary-button" type="button">
+                Refresh from Swiggy
+              </button>
+              </div>
+
+            <div id="address-state" class="inline-state" aria-live="polite">
+              <span class="mini-spinner" aria-hidden="true"></span>
+              <p>Connect Swiggy to load saved addresses.</p>
+            </div>
+            <fieldset id="address-list" class="address-list" hidden>
+              <legend class="sr-only">Select a default Swiggy delivery address</legend>
+            </fieldset>
+            <div id="address-empty" class="empty-state" hidden>
+              <span class="empty-illustration" aria-hidden="true">⌂</span>
+              <div>
+                <h3>No saved addresses found</h3>
+                <p>Add an address in the Swiggy app, then refresh this list.</p>
+              </div>
+              <button class="secondary-button" data-address-retry type="button">Refresh list</button>
+            </div>
+            </div>
+          </details>
+
+          <details id="language-section" class="ledger-section setup-step" aria-labelledby="language-title">
+            <summary class="section-heading step-summary">
+              <span class="section-number" aria-hidden="true">04</span>
+              <div>
+                <p class="eyebrow">Step 4 · Behaviour</p>
+                <h2 id="language-title">Language &amp; errands</h2>
+                <p>Choose how the agent replies and what it can help with.</p>
+              </div>
+              <span class="step-chevron" aria-hidden="true"></span>
+            </summary>
+
+            <div class="step-body">
+
+            <fieldset class="choice-fieldset">
+              <legend>Reply format</legend>
+              <div class="choice-grid choice-grid-four">
+                <label class="choice-card">
+                  <input type="radio" name="replyMode" value="kanglish-kannada" />
+                  <span class="choice-check" aria-hidden="true"></span>
+                  <strong>Kanglish + ಕನ್ನಡ</strong>
+                  <small>The same answer in Roman Kannada and Kannada script.</small>
+                </label>
+                <label class="choice-card">
+                  <input type="radio" name="replyMode" value="english" />
+                  <span class="choice-check" aria-hidden="true"></span>
+                  <strong>English</strong>
+                  <small>Clear, concise English replies.</small>
+                </label>
+                <label class="choice-card">
+                  <input type="radio" name="replyMode" value="kannada" />
+                  <span class="choice-check" aria-hidden="true"></span>
+                  <strong>ಕನ್ನಡ</strong>
+                  <small>Replies entirely in Kannada script.</small>
+                </label>
+                <label class="choice-card">
+                  <input type="radio" name="replyMode" value="match-user" />
+                  <span class="choice-check" aria-hidden="true"></span>
+                  <strong>Match the sender</strong>
+                  <small>Follow the language and script used in each message.</small>
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="conversation-grid">
+              <div class="settings-stack">
+                <div class="setting-row">
+                  <div>
+                    <strong>Reply to voice notes with audio</strong>
+                    <p>Text is always sent; a Kannada voice reply is added when available.</p>
+                  </div>
+                  <label class="switch-control">
+                    <input id="voice-replies" name="voiceReplies" type="checkbox" />
+                    <span class="switch-track" aria-hidden="true"><span></span></span>
+                    <span class="switch-label">Voice replies</span>
+                  </label>
+                </div>
+                <div class="capability-pair">
+                  <label class="capability-card">
+                    <input id="capability-instamart" name="instamart" type="checkbox" />
+                    <span class="capability-icon" aria-hidden="true">🥬</span>
+                    <span>
+                      <strong>Instamart</strong>
+                      <small>Groceries &amp; household essentials</small>
+                    </span>
+                    <span class="choice-check" aria-hidden="true"></span>
+                  </label>
+                  <label class="capability-card">
+                    <input id="capability-food" name="food" type="checkbox" />
+                    <span class="capability-icon" aria-hidden="true">🍲</span>
+                    <span>
+                      <strong>Food delivery</strong>
+                      <small>Restaurants, menus &amp; tracking</small>
+                    </span>
+                    <span class="choice-check" aria-hidden="true"></span>
+                  </label>
+                </div>
+              </div>
+
+              <figure class="reply-preview">
+                <figcaption>WhatsApp reply preview</figcaption>
+                <div class="phone-speaker" aria-hidden="true"></div>
+                <div id="preview-bubble" class="preview-bubble">
+                  Akka, cart ready ide. Bill nodi, order confirm maadthira?<br /><br />
+                  ಅಕ್ಕ, ಕಾರ್ಟ್ ಸಿದ್ಧವಾಗಿದೆ. ಬಿಲ್ ನೋಡಿ, ಆರ್ಡರ್ ಖಚಿತಪಡಿಸುತ್ತೀರಾ?
+                </div>
+                <small id="preview-caption">A live example of the selected reply style.</small>
+              </figure>
+            </div>
+
+          <details id="preferences-section" class="advanced-disclosure" aria-labelledby="preferences-title">
+            <summary class="section-heading step-summary advanced-summary">
+              <span class="section-number" aria-hidden="true">＋</span>
+              <div>
+                <p class="eyebrow">Optional</p>
+                <h2 id="preferences-title">Advanced preferences</h2>
+                <p>Brands, substitutions, pack size, dietary notes, and custom instructions.</p>
+              </div>
+              <span class="step-chevron" aria-hidden="true"></span>
+            </summary>
+
+            <div class="advanced-body">
+
+            <div class="chip-editor-grid">
+              <div class="chip-editor" data-chip-editor="dietary">
+                <label for="dietary-input">Dietary preferences</label>
+                <div class="chip-list" data-chip-list aria-live="polite"></div>
+                <div class="chip-input-row">
+                  <input id="dietary-input" data-chip-input type="text" maxlength="60" placeholder="Vegetarian, no onion…" />
+                  <button data-chip-add class="small-add-button" type="button" aria-label="Add dietary preference">Add</button>
+                </div>
+                <small>Press Enter to add another.</small>
+              </div>
+
+              <div class="chip-editor" data-chip-editor="preferredBrands">
+                <label for="brands-input">Preferred brands</label>
+                <div class="chip-list" data-chip-list aria-live="polite"></div>
+                <div class="chip-input-row">
+                  <input id="brands-input" data-chip-input type="text" maxlength="60" placeholder="Nandini, Cothas…" />
+                  <button data-chip-add class="small-add-button" type="button" aria-label="Add preferred brand">Add</button>
+                </div>
+                <small>Defaults, not hard restrictions.</small>
+              </div>
+
+              <div class="chip-editor" data-chip-editor="avoidItems">
+                <label for="avoid-input">Never choose</label>
+                <div class="chip-list" data-chip-list aria-live="polite"></div>
+                <div class="chip-input-row">
+                  <input id="avoid-input" data-chip-input type="text" maxlength="60" placeholder="Peanuts, diet soda…" />
+                  <button data-chip-add class="small-add-button" type="button" aria-label="Add item to avoid">Add</button>
+                </div>
+                <small>Use allergies here only alongside explicit instructions below.</small>
+              </div>
+            </div>
+
+            <div class="field-grid field-grid-four preference-selects">
+              <label class="field" for="spice-level">
+                <span class="field-label">Spice preference</span>
+                <span class="select-shell">
+                  <select id="spice-level" name="spiceLevel">
+                    <option value="ask">Ask each time</option>
+                    <option value="mild">Mild</option>
+                    <option value="medium">Medium</option>
+                    <option value="hot">Hot</option>
+                  </select>
+                  <span class="select-chevron" aria-hidden="true">⌄</span>
+                </span>
+              </label>
+              <label class="field" for="substitution-policy">
+                <span class="field-label">If an item is unavailable</span>
+                <span class="select-shell">
+                  <select id="substitution-policy" name="substitutionPolicy">
+                    <option value="ask-first">Ask before replacing</option>
+                    <option value="allow-similar">Choose the closest match</option>
+                    <option value="no-substitutions">Never substitute</option>
+                  </select>
+                  <span class="select-chevron" aria-hidden="true">⌄</span>
+                </span>
+              </label>
+              <label class="field" for="default-pack-size">
+                <span class="field-label">Default pack size</span>
+                <span class="select-shell">
+                  <select id="default-pack-size" name="packSize">
+                    <option value="smallest">Smallest in-stock</option>
+                    <option value="regular">Regular household size</option>
+                    <option value="value">Best value</option>
+                    <option value="ask">Ask each time</option>
+                  </select>
+                  <span class="select-chevron" aria-hidden="true">⌄</span>
+                </span>
+              </label>
+              <label class="field" for="max-order-value">
+                <span class="field-label">Preferred maximum</span>
+                <span class="money-input">
+                  <span aria-hidden="true">₹</span>
+                  <input id="max-order-value" name="maxOrderValueInr" type="number" min="1" max="1000000" step="1" inputmode="numeric" placeholder="No limit" />
+                </span>
+              </label>
+            </div>
+
+            <label class="field field-full" for="custom-instructions">
+              <span class="field-label">Anything else Sahayaka should remember</span>
+              <textarea id="custom-instructions" name="customInstructions" rows="6" maxlength="4000" placeholder="Examples: Prefer local produce. Never replace medicine or baby products. Call after reaching the gate."></textarea>
+              <span class="textarea-meta">
+                <small>Preferences can guide choices but can never override payment safety.</small>
+                <small><span id="instruction-count">0</span>/4000</small>
+              </span>
+            </label>
+
+            <aside class="safety-callout" aria-label="Permanent order safety rule">
+              <span class="safety-lock" aria-hidden="true">✓</span>
+              <div>
+                <p class="eyebrow">Always on · cannot be changed</p>
+                <h3>Every real order requires a fresh payment choice after the full bill.</h3>
+                <p>
+                  Sahayaka shows the complete bill first, waits for a later reply, then
+                  shows real payment options. It cannot place an order in the same turn.
+                </p>
+              </div>
+              <span class="safety-stamp">Confirmation required</span>
+            </aside>
+            </div>
+          </details>
+            </div>
+          </details>
+        </form>
+
+        <details id="triage-panel" class="triage-panel" aria-labelledby="triage-title">
+          <summary class="triage-toggle">
+            <span>
+              <span class="eyebrow">Troubleshooting</span>
+              <strong id="triage-title">Checks &amp; recovery</strong>
+              <small>Open only when something needs attention.</small>
+            </span>
+            <span class="step-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="triage-body">
+          <div class="triage-topline">
+            <p class="eyebrow">Quick triage</p>
+            <span id="diagnostic-state" class="status-pill is-neutral">Not checked</span>
+          </div>
+          <h2>Connection checks</h2>
+          <p id="triage-summary" class="triage-summary">
+            Read-only check; no cart, payment, or order was attempted.
+          </p>
+
+          <button id="run-diagnostics" class="diagnostic-button" type="button">
+            <span>
+              <small>Read-only check</small>
+              <strong>Run checks now</strong>
+            </span>
+            <span class="diagnostic-arrow" aria-hidden="true">↻</span>
+          </button>
+          <p id="diagnostic-updated" class="diagnostic-updated">No check run yet</p>
+
+          <div id="diagnostic-loading" class="triage-loading" hidden>
+            <span class="mini-spinner" aria-hidden="true"></span>
+            <span>Checking the household chain…</span>
+          </div>
+          <div id="diagnostic-list" class="diagnostic-list" aria-live="polite"></div>
+          <div id="diagnostic-empty" class="triage-empty">
+            <span aria-hidden="true">⁝</span>
+            <p>Connection findings and suggested fixes will appear here.</p>
+          </div>
+
+          <div class="triage-actions">
+            <h3>Safe actions</h3>
+            <button id="send-test-ping" class="triage-action" type="button">
+              <span class="triage-action-icon" aria-hidden="true">↗</span>
+              <span>
+                <strong>Send a test WhatsApp</strong>
+                <small>One harmless message to this profile</small>
+              </span>
+            </button>
+            <button id="reset-conversation" class="triage-action" type="button">
+              <span class="triage-action-icon" aria-hidden="true">↺</span>
+              <span>
+                <strong>Reset conversation memory</strong>
+                <small>Useful when context feels stuck</small>
+              </span>
+            </button>
+          </div>
+
+          <details class="technical-details">
+            <summary>Technical details</summary>
+            <pre id="diagnostic-technical">No diagnostic payload yet.</pre>
+            <button id="copy-diagnostics" class="text-button" type="button">Copy diagnostic</button>
+          </details>
+
+          <div class="triage-warning">
+            <strong>No “retry last order” button.</strong>
+            <p>Paid actions are never replayed from this desk.</p>
+          </div>
+          </div>
+        </details>
+      </main>
+
+      <footer class="page-footer">
+        <span>Sahayaka household desk</span>
+        <span>WhatsApp → Gemini → Swiggy MCP</span>
+        <span>Real account · confirmation always required</span>
+      </footer>
+    </div>
+
+    <div id="dirty-bar" class="dirty-bar" hidden>
+      <div>
+        <span class="dirty-dot" aria-hidden="true"></span>
+        <p><strong id="dirty-title">Unsaved changes</strong><small id="dirty-detail">Review and save this profile.</small></p>
+      </div>
+      <div>
+        <button id="discard-button" class="text-button" type="button">Discard</button>
+        <button id="save-button" class="primary-button" type="button">Save profile</button>
+      </div>
+    </div>
+
+    <div id="page-loading" class="page-loading" hidden aria-live="polite" aria-busy="true">
+      <span class="loading-seal" aria-hidden="true">ಸ</span>
+      <p id="loading-message">Opening the household desk…</p>
+    </div>
+
+    <dialog id="confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog">
+        <span class="dialog-mark" aria-hidden="true">!</span>
+        <p class="eyebrow">Please confirm</p>
+        <h2 id="confirm-title">Are you sure?</h2>
+        <p id="confirm-message"></p>
+        <div class="dialog-actions">
+          <button id="confirm-cancel" class="secondary-button" value="cancel">Cancel</button>
+          <button id="confirm-secondary" class="secondary-button" value="secondary" hidden>Discard</button>
+          <button id="confirm-accept" class="primary-button" value="confirm">Continue</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast-region" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
+
+    <template id="chip-template">
+      <span class="chip">
+        <span data-chip-text></span>
+        <button type="button" data-chip-remove aria-label="Remove">×</button>
+      </span>
+    </template>
+
+    <template id="address-template">
+      <label class="address-card">
+        <input type="radio" name="selectedAddress" />
+        <span class="address-radio" aria-hidden="true"></span>
+        <span class="address-icon" aria-hidden="true">⌂</span>
+        <span class="address-copy">
+          <strong data-address-label></strong>
+          <small data-address-text></small>
+        </span>
+        <span class="address-selected">Deliver here</span>
+      </label>
+    </template>
+
+    <template id="diagnostic-template">
+      <article class="diagnostic-item">
+        <span class="diagnostic-icon" aria-hidden="true"></span>
+        <div>
+          <div class="diagnostic-item-heading">
+            <strong data-diagnostic-name></strong>
+            <span data-diagnostic-state></span>
+          </div>
+          <p data-diagnostic-message></p>
+          <button data-diagnostic-action class="text-button" type="button" hidden></button>
+        </div>
+      </article>
+    </template>
+
+    <noscript>
+      <div class="noscript-message">This configuration desk needs JavaScript enabled.</div>
+    </noscript>
+  </body>
+</html>
